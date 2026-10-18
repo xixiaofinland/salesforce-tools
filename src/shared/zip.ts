@@ -8,7 +8,7 @@ export interface ZipFile {
 }
 
 // Without zip64 extensions, counts are 16-bit and sizes and offsets 32-bit.
-const MAX_FILES = 0xffff;
+export const MAX_ZIP_FILES = 0xffff;
 const MAX_BYTES = 0xffffffff;
 
 // General purpose flag bit 11: names are UTF-8.
@@ -38,8 +38,8 @@ function dosDateTime(date: Date): { time: number; date: number } {
 }
 
 export function createZip(files: ZipFile[], modified = new Date()): Uint8Array<ArrayBuffer> {
-  if (files.length > MAX_FILES) {
-    throw new RangeError(`A zip holds at most ${MAX_FILES.toLocaleString("en-US")} files`);
+  if (files.length > MAX_ZIP_FILES) {
+    throw new RangeError(`A zip holds at most ${MAX_ZIP_FILES.toLocaleString("en-US")} files`);
   }
   const stamp = dosDateTime(modified);
   const entries = files.map((file) => ({

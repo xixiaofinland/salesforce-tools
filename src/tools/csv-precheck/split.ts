@@ -31,10 +31,6 @@ export function splitCsv(
   return parts;
 }
 
-export function partCount(rowCount: number, rowsPerFile: number): number {
-  return Math.ceil(rowCount / rowsPerFile);
-}
-
 export function baseName(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
   return dot > 0 ? fileName.slice(0, dot) : fileName;

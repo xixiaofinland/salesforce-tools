@@ -48,7 +48,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 </SandboxLayout>
 
 <script>
-  import { createZip } from "../../shared/zip";
+  import { createZip, MAX_ZIP_FILES } from "../../shared/zip";
   import { CHECKS } from "../../tools/csv-precheck/checks";
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
   import {
@@ -60,7 +60,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     summaryLine,
     type PreparedCsv,
   } from "../../tools/csv-precheck/report";
-  import { baseName, partCount, partName, splitCsv } from "../../tools/csv-precheck/split";
+  import { baseName, partName, splitCsv } from "../../tools/csv-precheck/split";
 
   const input = document.querySelector<HTMLInputElement>("#file")!;
   const drop = document.querySelector<HTMLLabelElement>("#drop")!;
@@ -120,9 +120,6 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   // The file's own bytes, which the split copies so its encoding and line endings survive.
   let bytes: Uint8Array | undefined;
 
-  // A zip without zip64 lists at most 65,535 files.
-  const MAX_PARTS = 0xffff;
-
   // The rows per file the user entered, or undefined when it is not a usable number.
   function rowsPerFile(): number | undefined {
     const n = Number(splitRows.value);
@@ -134,10 +131,10 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     split.hidden = rowCount === 0;
     if (!latest || rowCount === 0) return;
     const n = rowsPerFile();
-    const parts = n === undefined ? 0 : partCount(rowCount, n);
+    const parts = n === undefined ? 0 : Math.ceil(rowCount / n);
     if (n === undefined) {
       splitPlan.textContent = "Enter a whole number of at least 1.";
-    } else if (parts > MAX_PARTS) {
+    } else if (parts > MAX_ZIP_FILES) {
       splitPlan.textContent = `That makes ${plural(parts, "file")}, more than a zip can hold. Enter a larger number.`;
     } else {
       const first = partName(latest.name, 0, parts);
@@ -147,7 +144,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
           ? `1 file, ${first}, with all ${plural(rowCount, "row")}.`
           : `${plural(parts, "file")}, ${first} to ${last}.`;
     }
-    splitDownload.disabled = n === undefined || parts > MAX_PARTS;
+    splitDownload.disabled = n === undefined || parts > MAX_ZIP_FILES;
   }
 
   // Header names go in via textContent, like the findings.
