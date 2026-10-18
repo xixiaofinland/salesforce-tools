@@ -1,7 +1,7 @@
 // File-structure checks. Data Loader's texts and behaviour come from its source, see
 // docs/research/data-loader-csv-facts.md sections 2, 5 and 6.
 import type { Check } from "../findings";
-import type { ParsedCsv } from "../parse";
+import { DELIMITER_NAMES, type ParsedCsv } from "../parse";
 
 function hasHeader(csv: ParsedCsv): csv is ParsedCsv & { header: string[] } {
   return csv.header !== null;
@@ -125,3 +125,18 @@ export const columnCount: Check = (csv) => {
     return [];
   });
 };
+
+// Data Loader can read other delimiters when told to, but the Bulk API cannot.
+export const delimiter: Check = (csv) =>
+  csv.delimiter === ","
+    ? []
+    : [
+        {
+          kind: "not-comma-delimited",
+          severity: "warning",
+          title: "The file is not comma-delimited",
+          explanation:
+            "Excel in many European languages saves CSV files with semicolons, and some tools export tabs. The Bulk API “doesn't support any delimiter except for a comma”, so with Use Bulk API or Use Bulk API 2.0 on, save the file comma-delimited instead. Without Bulk API, Data Loader can read it if you select the same delimiter in its Settings: tab, or semicolon under its other-characters delimiter options. Otherwise each line reads as one long value.",
+          detail: `The file is ${DELIMITER_NAMES[csv.delimiter]}-delimited`,
+        },
+      ];

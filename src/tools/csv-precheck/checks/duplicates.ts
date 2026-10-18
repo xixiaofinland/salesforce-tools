@@ -1,19 +1,11 @@
 // Duplicate checks: whole rows repeated, and repeated values in a key column the user picks.
-import { formatLocation, type Check, type Finding } from "../findings";
+import { formatLocation, rowList, type Check, type Finding } from "../findings";
 import type { DataRow, ParsedCsv } from "../parse";
 
 export interface KeyColumn {
   // 0-based position in the header.
   column: number;
   ignoreCaseAndSpaces: boolean;
-}
-
-const ROWS_LISTED = 10;
-
-function rowList(numbers: number[]): string {
-  const shown = numbers.slice(0, ROWS_LISTED).join(", ");
-  const more = numbers.length - ROWS_LISTED;
-  return more > 0 ? `Rows ${shown} and ${more.toLocaleString("en-US")} more` : `Rows ${shown}`;
 }
 
 // Rows sharing a key, in order of each group's first row; groups of one are dropped.

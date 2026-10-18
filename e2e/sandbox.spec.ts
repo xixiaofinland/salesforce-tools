@@ -36,13 +36,13 @@ async function sandbox(page: Page): Promise<Frame> {
 
 async function openCsv(
   frame: Frame,
-  text = "Id,Name\n001000000000001,Acme\n",
+  contents: string | Buffer = "Id,Name\n001000000000001,Acme\n",
   name = "accounts.csv",
 ) {
   await frame.locator("#file").setInputFiles({
     name,
     mimeType: "text/csv",
-    buffer: Buffer.from(text),
+    buffer: Buffer.from(contents),
   });
 }
 
@@ -54,6 +54,9 @@ const repeatedKeyFixture = readFileSync(
 );
 const twentyFiveRowsFixture = readFileSync(
   fileURLToPath(new URL("./fixtures/twenty-five-rows.csv", import.meta.url)),
+);
+const bomFixture = readFileSync(
+  fileURLToPath(new URL("./fixtures/bom-trailing-space.csv", import.meta.url)),
 );
 
 async function downloadBytes(download: Download): Promise<Buffer> {
@@ -109,7 +112,12 @@ test("a file with ragged rows and a duplicate header shows those findings", asyn
   const kinds = await frame
     .locator(".finding")
     .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
-  expect(kinds).toEqual(["duplicate-header", "row-too-few-columns", "row-too-many-columns"]);
+  expect(kinds).toEqual([
+    "duplicate-header",
+    "row-too-few-columns",
+    "row-too-many-columns",
+    "line-breaks",
+  ]);
 
   const duplicate = frame.locator('[data-kind="duplicate-header"]');
   await expect(duplicate).toContainText('Columns 2 "Name", 4 "name"');
@@ -123,6 +131,27 @@ test("a file with ragged rows and a duplicate header shows those findings", asyn
   ]);
   await expect(frame.locator('[data-kind="row-too-few-columns"] .example')).toHaveText(
     "Row 2 (line 3): Error reading data row #1: the number of columns (3) is less than the number of columns in the header (4)",
+  );
+});
+
+test("a file with a byte order mark and a trailing space shows both findings", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, bomFixture, "bom-trailing-space.csv");
+  await expect(frame.locator("#summary")).toHaveText("2 rows, 3 columns, comma-delimited");
+  const kinds = await frame
+    .locator(".finding")
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
+  expect(kinds).toEqual(["utf8-bom", "surrounding-spaces"]);
+
+  const bom = frame.locator('[data-kind="utf8-bom"]');
+  await expect(bom.locator(".severity")).toHaveText("Error");
+  await expect(bom.locator(".example")).toHaveText(
+    "CSV Error: Invalid CSV file format. Please select a different file. Error getting header row from the CSV file",
+  );
+  // The first header is read as "Id", not with the mark stuck to it.
+  await expect(frame.locator("#key-column option").nth(1)).toHaveText("Id");
+  await expect(frame.locator('[data-kind="surrounding-spaces"] .example')).toHaveText(
+    'column 2 "Name": Row 1, such as "Acme "',
   );
 });
 
@@ -257,11 +286,11 @@ test("thousands of ragged rows read as one finding with a count", async ({ page 
 test("opening a second file replaces the first report", async ({ page }) => {
   const frame = await sandbox(page);
   await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
-  await expect(frame.locator(".finding")).toHaveCount(3);
+  await expect(frame.locator(".finding")).toHaveCount(4);
 
-  await openCsv(frame, "Id;Name\n1;Acme\n2;Beta\n", "clean.csv");
+  await openCsv(frame, "Id,Name\n1,Acme\n2,Beta\n", "clean.csv");
   await expect(frame.locator("#file-name")).toHaveText("clean.csv");
-  await expect(frame.locator("#summary")).toHaveText("2 rows, 2 columns, semicolon-delimited");
+  await expect(frame.locator("#summary")).toHaveText("2 rows, 2 columns, comma-delimited");
   await expect(frame.locator(".finding")).toHaveCount(0);
   await expect(frame.locator("#clean")).toBeVisible();
 });
@@ -270,7 +299,7 @@ test("the report fits a phone-width screen", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   const frame = await sandbox(page);
   await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
-  await expect(frame.locator(".finding")).toHaveCount(3);
+  await expect(frame.locator(".finding")).toHaveCount(4);
   const overflow = await frame.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

@@ -1,5 +1,6 @@
 import { CHECKS } from "./checks";
 import { comparisonMode, duplicateKeys, type KeyColumn } from "./checks/duplicates";
+import { encodingChecks } from "./checks/encoding";
 import { batchLimit } from "./checks/size";
 import {
   formatLocation,
@@ -8,7 +9,7 @@ import {
   type Finding,
   type FindingGroup,
 } from "./findings";
-import { parseCsv, type Delimiter, type ParsedCsv } from "./parse";
+import { DELIMITER_NAMES, parseCsv, type Delimiter, type ParsedCsv } from "./parse";
 
 export interface Report {
   delimiter: Delimiter;
@@ -27,12 +28,6 @@ export interface PreparedCsv {
   findings: Finding[];
 }
 
-export const DELIMITER_NAMES: Record<Delimiter, string> = {
-  ",": "comma",
-  ";": "semicolon",
-  "\t": "tab",
-};
-
 // size is the file's length in bytes; without it, the text's length in UTF-8.
 export function prepareCsv(
   text: string,
@@ -41,6 +36,13 @@ export function prepareCsv(
 ): PreparedCsv {
   const csv = parseCsv(text);
   return { csv, findings: [...checks.flatMap((check) => check(csv)), ...batchLimit(csv, size)] };
+}
+
+// A file as opened: its bytes are checked for encoding, then decoded as file.text()
+// would, dropping a byte order mark and replacing bytes that are not UTF-8.
+export function prepareFile(bytes: Uint8Array, checks: Check[] = CHECKS): PreparedCsv {
+  const { csv, findings } = prepareCsv(new TextDecoder().decode(bytes), checks, bytes.byteLength);
+  return { csv, findings: [...encodingChecks(bytes, csv), ...findings] };
 }
 
 export function buildReport({ csv, findings }: PreparedCsv, key?: KeyColumn): Report {

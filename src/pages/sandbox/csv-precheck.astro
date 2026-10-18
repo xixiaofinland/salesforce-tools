@@ -49,13 +49,12 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 
 <script>
   import { createZip, MAX_ZIP_FILES } from "../../shared/zip";
-  import { CHECKS } from "../../tools/csv-precheck/checks";
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
   import {
     buildReport,
     keyLine,
     plural,
-    prepareCsv,
+    prepareFile,
     renderText,
     summaryLine,
     type PreparedCsv,
@@ -186,8 +185,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     // A file opened while an earlier one was still reading wins, whichever finishes first.
     if (file !== latest) return;
     bytes = contents;
-    // Decoded as file.text() would, dropping a UTF-8 byte order mark.
-    prepared = prepareCsv(new TextDecoder().decode(contents), CHECKS, contents.byteLength);
+    prepared = prepareFile(contents);
     fillKeyColumns(prepared.csv.header);
     show();
   }

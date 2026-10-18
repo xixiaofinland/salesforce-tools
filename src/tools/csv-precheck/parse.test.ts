@@ -105,6 +105,7 @@ describe("parseCsv", () => {
         { number: 2, line: 3, fields: ["2", "Beta"] },
       ],
       unclosedQuote: false,
+      spacedQuotes: [],
     });
   });
 
@@ -114,6 +115,7 @@ describe("parseCsv", () => {
       header: null,
       rows: [],
       unclosedQuote: false,
+      spacedQuotes: [],
     });
   });
 
@@ -142,6 +144,25 @@ describe("parseCsv", () => {
     const csv = parseCsv('a,b\n1,"open\n2,x\n');
     expect(csv.unclosedQuote).toBe(true);
     expect(csv.rows).toEqual([{ number: 1, line: 2, fields: ["1", "open\n2,x\n"] }]);
+  });
+
+  it("notes a space before an opening quote or after a closing one", () => {
+    const csv = parseCsv('a,b,c\n"John", "Smith",x\n"x" ,y,"z" \n1,2,3\n');
+    expect(csv.spacedQuotes).toEqual([
+      { row: 1, line: 2, column: 1 },
+      { row: 2, line: 3, column: 0 },
+      { row: 2, line: 3, column: 2 },
+    ]);
+    // Kept as written, like any other stray quote.
+    expect(csv.rows[0].fields).toEqual(["John", ' "Smith"', "x"]);
+  });
+
+  it("notes spaced quotes in the header without a row", () => {
+    expect(parseCsv('"a", "b"\n').spacedQuotes).toEqual([{ line: 1, column: 1 }]);
+  });
+
+  it("does not count spaces inside quotes or between plain values", () => {
+    expect(parseCsv('a,b\n" x ", y \n').spacedQuotes).toEqual([]);
   });
 
   it("uses the detected delimiter", () => {
