@@ -1,5 +1,6 @@
 ---
 import SandboxLayout from "../../shared/SandboxLayout.astro";
+import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 ---
 
 <SandboxLayout title="CSV Pre-check">
@@ -28,19 +29,38 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     <button type="button" id="download">
       Download report
     </button>
+    <section class="split" id="split">
+      <h3>Split into smaller files</h3>
+      <p class="split-help">
+        Each file starts with the header row and holds up to this many data rows, in their original
+        order and exactly as written. The files download together as one zip.
+      </p>
+      <label>
+        Rows per file
+        <input type="number" id="split-rows" min="1" step="1" value={BATCH_ROWS} />
+      </label>
+      <p id="split-plan"></p>
+      <button type="button" id="split-download">
+        Download files as zip
+      </button>
+    </section>
   </section>
 </SandboxLayout>
 
 <script>
+  import { createZip, MAX_ZIP_FILES } from "../../shared/zip";
+  import { CHECKS } from "../../tools/csv-precheck/checks";
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
   import {
     buildReport,
     keyLine,
+    plural,
     prepareCsv,
     renderText,
     summaryLine,
     type PreparedCsv,
   } from "../../tools/csv-precheck/report";
+  import { baseName, partName, splitCsv } from "../../tools/csv-precheck/split";
 
   const input = document.querySelector<HTMLInputElement>("#file")!;
   const drop = document.querySelector<HTMLLabelElement>("#drop")!;
@@ -54,6 +74,10 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   const keyColumn = document.querySelector<HTMLSelectElement>("#key-column")!;
   const keyLoose = document.querySelector<HTMLInputElement>("#key-loose")!;
   const keyText = document.querySelector<HTMLElement>("#key-line")!;
+  const split = document.querySelector<HTMLElement>("#split")!;
+  const splitRows = document.querySelector<HTMLInputElement>("#split-rows")!;
+  const splitPlan = document.querySelector<HTMLElement>("#split-plan")!;
+  const splitDownload = document.querySelector<HTMLButtonElement>("#split-download")!;
   let reportText = "";
 
   const SEVERITY_LABELS = { error: "Error", warning: "Warning", info: "Info" };
@@ -93,6 +117,35 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
 
   let latest: File | undefined;
   let prepared: PreparedCsv | undefined;
+  // The file's own bytes, which the split copies so its encoding and line endings survive.
+  let bytes: Uint8Array | undefined;
+
+  // The rows per file the user entered, or undefined when it is not a usable number.
+  function rowsPerFile(): number | undefined {
+    const n = Number(splitRows.value);
+    return splitRows.value !== "" && Number.isInteger(n) && n >= 1 ? n : undefined;
+  }
+
+  function showSplit() {
+    const rowCount = prepared?.csv.rows.length ?? 0;
+    split.hidden = rowCount === 0;
+    if (!latest || rowCount === 0) return;
+    const n = rowsPerFile();
+    const parts = n === undefined ? 0 : Math.ceil(rowCount / n);
+    if (n === undefined) {
+      splitPlan.textContent = "Enter a whole number of at least 1.";
+    } else if (parts > MAX_ZIP_FILES) {
+      splitPlan.textContent = `That makes ${plural(parts, "file")}, more than a zip can hold. Enter a larger number.`;
+    } else {
+      const first = partName(latest.name, 0, parts);
+      const last = partName(latest.name, parts - 1, parts);
+      splitPlan.textContent =
+        parts === 1
+          ? `1 file, ${first}, with all ${plural(rowCount, "row")}.`
+          : `${plural(parts, "file")}, ${first} to ${last}.`;
+    }
+    splitDownload.disabled = n === undefined || parts > MAX_ZIP_FILES;
+  }
 
   // Header names go in via textContent, like the findings.
   function fillKeyColumns(header: string[] | null) {
@@ -123,21 +176,25 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     keyText.hidden = !report.key;
     clean.hidden = report.groups.length > 0;
     findings.replaceChildren(...report.groups.map(renderGroup));
+    showSplit();
     result.hidden = false;
   }
 
   async function open(file: File) {
     latest = file;
-    const text = await file.text();
+    const contents = new Uint8Array(await file.arrayBuffer());
     // A file opened while an earlier one was still reading wins, whichever finishes first.
     if (file !== latest) return;
-    prepared = prepareCsv(text);
+    bytes = contents;
+    // Decoded as file.text() would, dropping a UTF-8 byte order mark.
+    prepared = prepareCsv(new TextDecoder().decode(contents), CHECKS, contents.byteLength);
     fillKeyColumns(prepared.csv.header);
     show();
   }
 
   keyColumn.addEventListener("change", show);
   keyLoose.addEventListener("change", show);
+  splitRows.addEventListener("input", showSplit);
 
   input.addEventListener("change", () => {
     if (input.files?.[0]) void open(input.files[0]);
@@ -148,13 +205,27 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     const file = e.dataTransfer?.files[0];
     if (file) void open(file);
   });
-  download.addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([reportText], { type: "text/plain" }));
+  function save(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "csv-precheck-report.txt";
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  download.addEventListener("click", () => {
+    save(new Blob([reportText], { type: "text/plain" }), "csv-precheck-report.txt");
+  });
+  splitDownload.addEventListener("click", () => {
+    const n = rowsPerFile();
+    if (!latest || !prepared || !bytes || n === undefined) return;
+    const name = latest.name;
+    const parts = splitCsv(bytes, prepared.csv.delimiter, n);
+    const zip = createZip(
+      parts.map((data, i) => ({ name: partName(name, i, parts.length), data })),
+    );
+    save(new Blob([zip], { type: "application/zip" }), `${baseName(name)}-parts.zip`);
   });
 </script>
 
@@ -264,5 +335,28 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   }
   #download {
     display: block;
+  }
+  .split {
+    border-top: 1px solid var(--border);
+    margin: 1.5rem 0 0;
+    padding: 1rem 0 0;
+  }
+  .split[hidden] {
+    display: none;
+  }
+  .split h3 {
+    font-size: 1rem;
+    margin: 0 0 0.25rem;
+  }
+  .split-help {
+    color: var(--muted);
+    margin: 0 0 0.75rem;
+  }
+  #split-rows {
+    width: 8rem;
+    max-width: 100%;
+  }
+  #split-plan {
+    margin: 0.5rem 0;
   }
 </style>

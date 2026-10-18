@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Frame, type Page } from "@playwright/test";
+import { expect, test, type Download, type Frame, type Page } from "@playwright/test";
+import { unzip } from "../src/shared/unzip.testing";
 
 // A stand-in for an attacker's server: any request reaching it means data could leave the page.
 let exfil: Server;
@@ -51,6 +52,15 @@ const raggedFixture = readFileSync(
 const repeatedKeyFixture = readFileSync(
   fileURLToPath(new URL("./fixtures/repeated-key.csv", import.meta.url)),
 );
+const twentyFiveRowsFixture = readFileSync(
+  fileURLToPath(new URL("./fixtures/twenty-five-rows.csv", import.meta.url)),
+);
+
+async function downloadBytes(download: Download): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
 
 test("sandbox pages ship the CSP header", async ({ request }) => {
   const res = await request.get("/sandbox/csv-precheck/");
@@ -169,6 +179,67 @@ test("opening another file resets the key column to its own headers", async ({ p
   await expect(frame.locator("#key-column option")).toHaveText(["None", "Id", "Column 2"]);
   await expect(frame.locator("#key-column")).toHaveValue("");
   await expect(frame.locator('[data-kind="duplicate-key"]')).toHaveCount(0);
+});
+
+test("splitting 25 rows by 10 downloads a zip of three parts with the header", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, twentyFiveRowsFixture.toString(), "accounts.csv");
+  await expect(frame.locator("#split-rows")).toHaveValue("10000");
+  await expect(frame.locator("#split-plan")).toHaveText(
+    "1 file, accounts-part-001.csv, with all 25 rows.",
+  );
+
+  await frame.locator("#split-rows").fill("10");
+  await expect(frame.locator("#split-plan")).toHaveText(
+    "3 files, accounts-part-001.csv to accounts-part-003.csv.",
+  );
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    frame.locator("#split-download").click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("accounts-parts.zip");
+
+  const parts = unzip(await downloadBytes(download));
+  expect(parts.map((p) => p.name)).toEqual([
+    "accounts-part-001.csv",
+    "accounts-part-002.csv",
+    "accounts-part-003.csv",
+  ]);
+  const texts = parts.map((p) => Buffer.from(p.data).toString());
+  const original = twentyFiveRowsFixture.toString();
+  const header = "Id,Name,Note\n";
+  expect(texts.every((t) => t.startsWith(header))).toBe(true);
+  // Row 10's quoted line break stays inside the first part.
+  expect(texts[0].endsWith('10,Account 10,"Line one\nline two"\n')).toBe(true);
+  expect(texts.map((t) => t.slice(header.length)).join("")).toBe(original.slice(header.length));
+  const rowCounts = texts.map((t) => (t.match(/^\d+,Account/gm) ?? []).length);
+  expect(rowCounts).toEqual([10, 10, 5]);
+});
+
+test("rows per file must be a whole number of at least 1", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame);
+  await frame.locator("#split-rows").fill("0");
+  await expect(frame.locator("#split-plan")).toHaveText("Enter a whole number of at least 1.");
+  await expect(frame.locator("#split-download")).toBeDisabled();
+  await frame.locator("#split-rows").fill("1");
+  await expect(frame.locator("#split-download")).toBeEnabled();
+});
+
+test("a file with no data rows offers no split", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, "Id,Name\n");
+  await expect(frame.locator("#summary")).toHaveText("0 rows, 2 columns, comma-delimited");
+  await expect(frame.locator("#split")).toBeHidden();
+});
+
+test("a file over 10,000 rows suggests splitting it", async ({ page }) => {
+  const frame = await sandbox(page);
+  const rows = Array.from({ length: 10_001 }, (_, i) => `${i},x\n`).join("");
+  await openCsv(frame, "Id,Name\n" + rows);
+  await expect(frame.locator('[data-kind="batch-limit"] .example')).toHaveText(
+    "10,001 data rows, more than the Bulk API's 10,000 records per batch",
+  );
 });
 
 test("thousands of ragged rows read as one finding with a count", async ({ page }) => {
