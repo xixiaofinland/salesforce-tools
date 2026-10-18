@@ -173,7 +173,9 @@ test("opening another file resets the key column to its own headers", async ({ p
 
 test("thousands of ragged rows read as one finding with a count", async ({ page }) => {
   const frame = await sandbox(page);
-  await openCsv(frame, "a,b\n" + "1,2,3\n".repeat(5000));
+  // Distinct rows, so the duplicate-row check stays quiet.
+  const rows = Array.from({ length: 5000 }, (_, i) => `${i},2,3\n`).join("");
+  await openCsv(frame, "a,b\n" + rows);
   const finding = frame.locator(".finding");
   await expect(finding).toHaveCount(1);
   await expect(finding.locator(".count")).toHaveText("(5,000)");
