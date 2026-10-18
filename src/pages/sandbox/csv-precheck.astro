@@ -11,6 +11,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   <section id="result" aria-live="polite" hidden>
     <h2 id="file-name"></h2>
     <p id="summary"></p>
+    <p id="id-line" hidden></p>
     <div class="key-picker" id="key-picker">
       <label>
         Key column
@@ -29,9 +30,20 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     <button type="button" id="download">
       Download report
     </button>
-    <section class="split" id="split">
+    <section class="tool-section" id="convert">
+      <h3>Convert 15-character IDs to 18</h3>
+      <p class="tool-help">
+        Adds the 3-character suffix to every 15-character ID in the ID columns, so letter case no
+        longer matters. Nothing else in the file changes.
+      </p>
+      <p id="convert-plan"></p>
+      <button type="button" id="convert-download">
+        Convert 15→18
+      </button>
+    </section>
+    <section class="tool-section" id="split">
       <h3>Split into smaller files</h3>
-      <p class="split-help">
+      <p class="tool-help">
         Each file starts with the header row and holds up to this many data rows, in their original
         order and exactly as written. The files download together as one zip.
       </p>
@@ -49,9 +61,12 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 
 <script>
   import { createZip, MAX_ZIP_FILES } from "../../shared/zip";
+  import { convertedName, convertIds } from "../../tools/csv-precheck/convert";
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
+  import { convertibleIds, idColumns } from "../../tools/csv-precheck/ids";
   import {
     buildReport,
+    idLine,
     keyLine,
     plural,
     prepareFile,
@@ -73,6 +88,10 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   const keyColumn = document.querySelector<HTMLSelectElement>("#key-column")!;
   const keyLoose = document.querySelector<HTMLInputElement>("#key-loose")!;
   const keyText = document.querySelector<HTMLElement>("#key-line")!;
+  const idText = document.querySelector<HTMLElement>("#id-line")!;
+  const convert = document.querySelector<HTMLElement>("#convert")!;
+  const convertPlan = document.querySelector<HTMLElement>("#convert-plan")!;
+  const convertDownload = document.querySelector<HTMLButtonElement>("#convert-download")!;
   const split = document.querySelector<HTMLElement>("#split")!;
   const splitRows = document.querySelector<HTMLInputElement>("#split-rows")!;
   const splitPlan = document.querySelector<HTMLElement>("#split-plan")!;
@@ -146,6 +165,13 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     splitDownload.disabled = n === undefined || parts > MAX_ZIP_FILES;
   }
 
+  // The conversion is offered only when it would change something.
+  function showConvert() {
+    const count = prepared ? convertibleIds(prepared.csv, idColumns(prepared.csv)) : 0;
+    convert.hidden = count === 0;
+    convertPlan.textContent = `${plural(count, "ID")} of 15 characters to convert.`;
+  }
+
   // Header names go in via textContent, like the findings.
   function fillKeyColumns(header: string[] | null) {
     const none = el("option", "", "None");
@@ -173,8 +199,11 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     summary.textContent = summaryLine(report);
     keyText.textContent = keyLine(report);
     keyText.hidden = !report.key;
+    idText.textContent = idLine(report);
+    idText.hidden = report.idColumns.length === 0;
     clean.hidden = report.groups.length > 0;
     findings.replaceChildren(...report.groups.map(renderGroup));
+    showConvert();
     showSplit();
     result.hidden = false;
   }
@@ -214,6 +243,11 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 
   download.addEventListener("click", () => {
     save(new Blob([reportText], { type: "text/plain" }), "csv-precheck-report.txt");
+  });
+  convertDownload.addEventListener("click", () => {
+    if (!latest || !prepared || !bytes) return;
+    const converted = convertIds(bytes, prepared.csv.delimiter, idColumns(prepared.csv));
+    save(new Blob([converted], { type: "text/csv" }), convertedName(latest.name));
   });
   splitDownload.addEventListener("click", () => {
     const n = rowsPerFile();
@@ -270,7 +304,8 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   .key-picker select {
     max-width: 100%;
   }
-  #key-line {
+  #key-line,
+  #id-line {
     margin: 0 0 1rem;
   }
   .clean {
@@ -334,19 +369,19 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   #download {
     display: block;
   }
-  .split {
+  .tool-section {
     border-top: 1px solid var(--border);
     margin: 1.5rem 0 0;
     padding: 1rem 0 0;
   }
-  .split[hidden] {
+  .tool-section[hidden] {
     display: none;
   }
-  .split h3 {
+  .tool-section h3 {
     font-size: 1rem;
     margin: 0 0 0.25rem;
   }
-  .split-help {
+  .tool-help {
     color: var(--muted);
     margin: 0 0 0.75rem;
   }
@@ -354,6 +389,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     width: 8rem;
     max-width: 100%;
   }
+  #convert-plan,
   #split-plan {
     margin: 0.5rem 0;
   }

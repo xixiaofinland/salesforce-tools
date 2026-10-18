@@ -63,6 +63,14 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
         cause.
       </li>
       <li>
+        <strong>Salesforce IDs.</strong> It finds the ID columns by name, such as
+        <code>Id</code> or <code>AccountId</code>, or because most of their values look like IDs. An
+        ID must be 15 or 18 letters and digits; it also flags 18-character IDs whose last three
+        characters do not match the first 15, columns mixing both lengths, 15-character IDs that
+        differ only in letter case, and empty values in an <code>Id</code> column. One click
+        converts every 15-character ID to 18 characters, which do not depend on letter case.
+      </li>
+      <li>
         <strong>Spaces.</strong> Data Loader does not trim values, so it lists the columns with
         values that start or end with a space, and any space next to a double quote, as in
         <code>"John", "Smith"</code>, which the Bulk API rejects. It never changes a value itself.
@@ -123,6 +131,15 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
           the header (4)
         </code>
       </li>
+      <li>
+        <code>MALFORMED_ID: Object name id: id value of incorrect type</code>
+      </li>
+      <li>
+        <code>MALFORMED_ID: bad id</code>
+      </li>
+      <li>
+        <code>MISSING_ARGUMENT: Id not specified in an update call</code>
+      </li>
     </ul>
     <p>
       A row with the wrong number of columns stops the whole operation, so no row after it loads.
@@ -141,9 +158,10 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
     </p>
     <h3>Does it change my file?</h3>
     <p>
-      No. It only reads the file. You can download the report as a text file, or split the file into
-      new, smaller files; the CSV itself is left as it is. Split files keep every row exactly as
-      written, in its original order.
+      No. It only reads the file. You can download the report as a text file, split the file into
+      new, smaller files, or download a copy with 18-character IDs; the CSV itself is left as it is.
+      Split files keep every row exactly as written, in its original order, and the converted copy
+      differs only in the IDs.
     </p>
     <h3>Why is Data Loader's row number one less than the report's?</h3>
     <p>

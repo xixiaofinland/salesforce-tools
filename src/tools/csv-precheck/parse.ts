@@ -46,6 +46,9 @@ interface CsvRecord {
   // Offsets in the text: where the record starts, and just past its line break.
   start: number;
   end: number;
+  // Where each field starts in the text, at its opening quote if it has one; recorded
+  // only when asked for.
+  fieldStarts?: number[];
 }
 
 // Where a record sits in the text, so a file can be cut between records without
@@ -82,16 +85,33 @@ export function recordSpans(text: string, delimiter: string): RecordSpan[] {
   }));
 }
 
+export interface FieldRecord {
+  fields: string[];
+  fieldStarts: number[];
+  blank: boolean;
+}
+
+// Each record's fields with where they start, so single values can be rewritten in place.
+export function fieldRecords(text: string, delimiter: string): FieldRecord[] {
+  return scanRecords(text, delimiter, Infinity, true).records.map((r) => ({
+    fields: r.fields,
+    fieldStarts: r.fieldStarts!,
+    blank: isBlank(r.fields),
+  }));
+}
+
 // RFC 4180 records: quoted fields may hold the delimiter, line breaks and "" for a quote.
 // A quote inside an unquoted field, or text after a closing quote, is kept as written.
 export function parseRecords(text: string, delimiter: string, maxRecords = Infinity): string[][] {
   return scanRecords(text, delimiter, maxRecords).records.map((r) => r.fields);
 }
 
-function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
+function scanRecords(text: string, delimiter: string, maxRecords = Infinity, withStarts = false) {
   const records: CsvRecord[] = [];
   let record: string[] = [];
   let spacedQuotes: number[] = [];
+  let fieldStarts: number[] = [];
+  let fieldStart = 0;
   let field = "";
   let quoted = false;
   // The current field's quote has closed, so any text after it is stray.
@@ -101,13 +121,25 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
   let recordStart = 0;
   let i = 0;
 
-  const endRecord = (end: number) => {
+  const endField = () => {
     record.push(field);
-    records.push({ line: recordLine, fields: record, spacedQuotes, start: recordStart, end });
-    record = [];
-    spacedQuotes = [];
+    if (withStarts) fieldStarts.push(fieldStart);
     field = "";
     closed = false;
+  };
+  const endRecord = (end: number) => {
+    endField();
+    records.push({
+      line: recordLine,
+      fields: record,
+      spacedQuotes,
+      start: recordStart,
+      end,
+      ...(withStarts ? { fieldStarts } : {}),
+    });
+    record = [];
+    spacedQuotes = [];
+    fieldStarts = [];
   };
   const markSpacedQuote = () => {
     if (spacedQuotes.at(-1) !== record.length) spacedQuotes.push(record.length);
@@ -133,14 +165,13 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
       quoted = true;
       i++;
     } else if (ch === delimiter) {
-      record.push(field);
-      field = "";
-      closed = false;
+      endField();
       i++;
+      fieldStart = i;
     } else if (ch === "\n" || (ch === "\r" && text[i + 1] === "\n")) {
       i += ch === "\r" ? 2 : 1;
       endRecord(i);
-      recordStart = i;
+      recordStart = fieldStart = i;
       recordLine = ++line;
     } else {
       if ((ch === " " && closed) || (ch === '"' && /^ +$/.test(field))) markSpacedQuote();
