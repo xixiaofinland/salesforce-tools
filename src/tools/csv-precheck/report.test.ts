@@ -3,6 +3,7 @@ import { groupFindings, type Check, type Finding } from "./findings";
 import {
   buildReport,
   checkCsv,
+  dateLine,
   idLine,
   keyLine,
   prepareCsv,
@@ -47,6 +48,8 @@ describe("checkCsv", () => {
       columnCount: 2,
       groups: [],
       idColumns: [],
+      dateColumns: [],
+      european: false,
     });
   });
 
@@ -146,6 +149,14 @@ describe("prepareFile", () => {
 });
 
 describe("buildReport", () => {
+  it("re-runs the date checks for the European setting without parsing again", () => {
+    const prepared = prepareCsv("D\n13/02/2024\n01/02/2024\n");
+    const kinds = (european: boolean) =>
+      buildReport(prepared, undefined, { european }).groups.map((g) => g.kind);
+    expect(kinds(false)).toEqual(["invalid-date", "date-order-conflict"]);
+    expect(kinds(true)).toEqual([]);
+  });
+
   const text = "No,Ext\n1,a\n2,A\n3,a\n3,a\n";
 
   it("adds the key column's repeated values to the file's findings", () => {
@@ -203,6 +214,21 @@ describe("renderText", () => {
     expect(idLine(checkCsv("No\n1\n"))).toBe("");
     expect(renderText("a.csv", report)).toBe(
       'File: a.csv\n1 row, 2 columns, comma-delimited\nID columns: column 1 "Id", column 2 "AccountId"\n\nNo problems found.\n',
+    );
+  });
+
+  it("names the date columns and the European setting under the summary", () => {
+    const prepared = prepareCsv("Name,Close,Start\na,2024-01-15,03/04/2024\n");
+    const us = buildReport(prepared);
+    expect(dateLine(us)).toBe(
+      'Date columns: column 2 "Close", column 3 "Start" (Use European date format off)',
+    );
+    expect(dateLine(buildReport(prepared, undefined, { european: true }))).toBe(
+      'Date columns: column 2 "Close", column 3 "Start" (Use European date format on)',
+    );
+    expect(dateLine(checkCsv("No\n1\n"))).toBe("");
+    expect(renderText("a.csv", us)).toContain(
+      '1 row, 3 columns, comma-delimited\nDate columns: column 2 "Close", column 3 "Start" (Use European date format off)\n\n[WARNING] Slash dates that read either way (1)',
     );
   });
 

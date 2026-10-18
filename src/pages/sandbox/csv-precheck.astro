@@ -12,6 +12,13 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     <h2 id="file-name"></h2>
     <p id="summary"></p>
     <p id="id-line" hidden></p>
+    <div class="date-setting" id="date-setting" hidden>
+      <p id="date-line"></p>
+      <label>
+        <input type="checkbox" id="european" />
+        Use European date format (dd/MM/yyyy), as in Data Loader's Settings
+      </label>
+    </div>
     <div class="key-picker" id="key-picker">
       <label>
         Key column
@@ -66,6 +73,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   import { convertibleIds, idColumns } from "../../tools/csv-precheck/ids";
   import {
     buildReport,
+    dateLine,
     idLine,
     keyLine,
     plural,
@@ -89,6 +97,9 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   const keyLoose = document.querySelector<HTMLInputElement>("#key-loose")!;
   const keyText = document.querySelector<HTMLElement>("#key-line")!;
   const idText = document.querySelector<HTMLElement>("#id-line")!;
+  const dateSetting = document.querySelector<HTMLElement>("#date-setting")!;
+  const dateText = document.querySelector<HTMLElement>("#date-line")!;
+  const european = document.querySelector<HTMLInputElement>("#european")!;
   const convert = document.querySelector<HTMLElement>("#convert")!;
   const convertPlan = document.querySelector<HTMLElement>("#convert-plan")!;
   const convertDownload = document.querySelector<HTMLButtonElement>("#convert-download")!;
@@ -185,15 +196,15 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     keyPicker.hidden = options.length === 0;
   }
 
-  // Runs on opening a file and on every key change; the file is parsed and the other
-  // checks run only once, in prepareCsv.
+  // Runs on opening a file and on every key or date setting change; the file is parsed and
+  // the other checks run only once, in prepareCsv.
   function show() {
     if (!latest || !prepared) return;
     const key =
       keyColumn.value === ""
         ? undefined
         : { column: Number(keyColumn.value), ignoreCaseAndSpaces: keyLoose.checked };
-    const report = buildReport(prepared, key);
+    const report = buildReport(prepared, key, { european: european.checked });
     reportText = renderText(latest.name, report);
     fileName.textContent = latest.name;
     summary.textContent = summaryLine(report);
@@ -201,6 +212,8 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     keyText.hidden = !report.key;
     idText.textContent = idLine(report);
     idText.hidden = report.idColumns.length === 0;
+    dateText.textContent = dateLine(report);
+    dateSetting.hidden = report.dateColumns.length === 0;
     clean.hidden = report.groups.length > 0;
     findings.replaceChildren(...report.groups.map(renderGroup));
     showConvert();
@@ -221,6 +234,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 
   keyColumn.addEventListener("change", show);
   keyLoose.addEventListener("change", show);
+  european.addEventListener("change", show);
   splitRows.addEventListener("input", showSplit);
 
   input.addEventListener("change", () => {
@@ -303,6 +317,15 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   }
   .key-picker select {
     max-width: 100%;
+  }
+  .date-setting {
+    margin: 0 0 1rem;
+  }
+  .date-setting[hidden] {
+    display: none;
+  }
+  #date-line {
+    margin: 0 0 0.25rem;
   }
   #key-line,
   #id-line {
