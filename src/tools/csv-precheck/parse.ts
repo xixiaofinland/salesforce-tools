@@ -24,6 +24,17 @@ export interface ParsedCsv {
 interface CsvRecord {
   line: number;
   fields: string[];
+  // Offsets in the text: where the record starts, and just past its line break.
+  start: number;
+  end: number;
+}
+
+// Where a record sits in the text, so a file can be cut between records without
+// rewriting them.
+export interface RecordSpan {
+  start: number;
+  end: number;
+  blank: boolean;
 }
 
 // A blank line, or one holding only "", reads as a single empty field.
@@ -41,6 +52,14 @@ export function parseCsv(text: string): ParsedCsv {
   };
 }
 
+export function recordSpans(text: string, delimiter: string): RecordSpan[] {
+  return scanRecords(text, delimiter).records.map((r) => ({
+    start: r.start,
+    end: r.end,
+    blank: isBlank(r.fields),
+  }));
+}
+
 // RFC 4180 records: quoted fields may hold the delimiter, line breaks and "" for a quote.
 // A quote inside an unquoted field, or text after a closing quote, is kept as written.
 export function parseRecords(text: string, delimiter: string, maxRecords = Infinity): string[][] {
@@ -54,11 +73,12 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
   let quoted = false;
   let line = 1;
   let recordLine = 1;
+  let recordStart = 0;
   let i = 0;
 
-  const endRecord = () => {
+  const endRecord = (end: number) => {
     record.push(field);
-    records.push({ line: recordLine, fields: record });
+    records.push({ line: recordLine, fields: record, start: recordStart, end });
     record = [];
     field = "";
   };
@@ -86,8 +106,9 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
       field = "";
       i++;
     } else if (ch === "\n" || (ch === "\r" && text[i + 1] === "\n")) {
-      endRecord();
       i += ch === "\r" ? 2 : 1;
+      endRecord(i);
+      recordStart = i;
       recordLine = ++line;
     } else {
       field += ch;
@@ -97,7 +118,7 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
 
   if (records.length >= maxRecords) return { records, unclosedQuote: false };
   // A file without a final newline still ends its last record.
-  if (field !== "" || record.length > 0 || quoted) endRecord();
+  if (field !== "" || record.length > 0 || quoted) endRecord(text.length);
   return { records, unclosedQuote: quoted };
 }
 
