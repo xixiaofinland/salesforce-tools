@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Frame, type Page } from "@playwright/test";
 
 // A stand-in for an attacker's server: any request reaching it means data could leave the page.
@@ -31,13 +33,21 @@ async function sandbox(page: Page): Promise<Frame> {
   return frame;
 }
 
-async function openCsv(frame: Frame) {
+async function openCsv(
+  frame: Frame,
+  text = "Id,Name\n001000000000001,Acme\n",
+  name = "accounts.csv",
+) {
   await frame.locator("#file").setInputFiles({
-    name: "accounts.csv",
+    name,
     mimeType: "text/csv",
-    buffer: Buffer.from("Id,Name\n001000000000001,Acme\n"),
+    buffer: Buffer.from(text),
   });
 }
+
+const raggedFixture = readFileSync(
+  fileURLToPath(new URL("./fixtures/ragged-duplicate.csv", import.meta.url)),
+);
 
 test("sandbox pages ship the CSP header", async ({ request }) => {
   const res = await request.get("/sandbox/csv-precheck/");
@@ -53,10 +63,15 @@ test("the iframe is sandboxed without same-origin access", async ({ page }) => {
   expect(flags?.split(" ").sort()).toEqual(["allow-downloads", "allow-scripts"]);
 });
 
-test("a file opened in the sandbox is processed and the report downloads", async ({ page }) => {
+test("a clean file shows no problems with its counts, and the report downloads", async ({
+  page,
+}) => {
   const frame = await sandbox(page);
   await openCsv(frame);
-  await expect(frame.locator("#result")).toHaveText("accounts.csv: 2 lines, 29 bytes");
+  await expect(frame.locator("#file-name")).toHaveText("accounts.csv");
+  await expect(frame.locator("#summary")).toHaveText("1 row, 2 columns, comma-delimited");
+  await expect(frame.locator("#clean")).toBeVisible();
+  await expect(frame.locator(".finding")).toHaveCount(0);
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -67,7 +82,68 @@ test("a file opened in the sandbox is processed and the report downloads", async
     for await (const chunk of stream) chunks.push(chunk as Buffer);
     return Buffer.concat(chunks).toString();
   });
-  expect(body).toBe("File: accounts.csv\nLines: 2\nBytes: 29\n");
+  expect(body).toBe(
+    "File: accounts.csv\n1 row, 2 columns, comma-delimited\n\nNo problems found.\n",
+  );
+});
+
+test("a file with ragged rows and a duplicate header shows those findings", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
+  await expect(frame.locator("#summary")).toHaveText("5 rows, 4 columns, comma-delimited");
+  await expect(frame.locator("#clean")).toBeHidden();
+
+  const kinds = await frame
+    .locator(".finding")
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
+  expect(kinds).toEqual(["duplicate-header", "row-too-few-columns", "row-too-many-columns"]);
+
+  const duplicate = frame.locator('[data-kind="duplicate-header"]');
+  await expect(duplicate).toContainText('Columns 2 "Name", 4 "name"');
+  await expect(duplicate.locator(".severity")).toHaveText("Error");
+
+  const tooMany = frame.locator('[data-kind="row-too-many-columns"]');
+  await expect(tooMany.locator(".count")).toHaveText("(2)");
+  await expect(tooMany.locator(".example")).toHaveText([
+    "Row 3 (line 4): Error reading data row #2: the number of columns (5) exceeds the number of columns in the header (4)",
+    "Row 4 (line 5): Error reading data row #3: the number of columns (5) exceeds the number of columns in the header (4)",
+  ]);
+  await expect(frame.locator('[data-kind="row-too-few-columns"] .example')).toHaveText(
+    "Row 2 (line 3): Error reading data row #1: the number of columns (3) is less than the number of columns in the header (4)",
+  );
+});
+
+test("thousands of ragged rows read as one finding with a count", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, "a,b\n" + "1,2,3\n".repeat(5000));
+  const finding = frame.locator(".finding");
+  await expect(finding).toHaveCount(1);
+  await expect(finding.locator(".count")).toHaveText("(5,000)");
+  await expect(finding.locator(".example")).toHaveCount(5);
+  await expect(finding.locator(".more")).toHaveText("and 4,995 more");
+});
+
+test("opening a second file replaces the first report", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
+  await expect(frame.locator(".finding")).toHaveCount(3);
+
+  await openCsv(frame, "Id;Name\n1;Acme\n2;Beta\n", "clean.csv");
+  await expect(frame.locator("#file-name")).toHaveText("clean.csv");
+  await expect(frame.locator("#summary")).toHaveText("2 rows, 2 columns, semicolon-delimited");
+  await expect(frame.locator(".finding")).toHaveCount(0);
+  await expect(frame.locator("#clean")).toBeVisible();
+});
+
+test("the report fits a phone-width screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  const frame = await sandbox(page);
+  await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
+  await expect(frame.locator(".finding")).toHaveCount(3);
+  const overflow = await frame.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("the hosting page cannot read the sandbox document", async ({ page }) => {
