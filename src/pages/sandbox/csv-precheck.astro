@@ -10,6 +10,17 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   <section id="result" aria-live="polite" hidden>
     <h2 id="file-name"></h2>
     <p id="summary"></p>
+    <div class="key-picker" id="key-picker">
+      <label>
+        Key column
+        <select id="key-column"></select>
+      </label>
+      <label>
+        <input type="checkbox" id="key-loose" />
+        Ignore letter case and surrounding spaces
+      </label>
+    </div>
+    <p id="key-line" hidden></p>
     <p id="clean" class="clean" hidden>
       No problems found.
     </p>
@@ -22,7 +33,14 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
 
 <script>
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
-  import { checkCsv, renderText, summaryLine } from "../../tools/csv-precheck/report";
+  import {
+    buildReport,
+    keyLine,
+    prepareCsv,
+    renderText,
+    summaryLine,
+    type PreparedCsv,
+  } from "../../tools/csv-precheck/report";
 
   const input = document.querySelector<HTMLInputElement>("#file")!;
   const drop = document.querySelector<HTMLLabelElement>("#drop")!;
@@ -32,6 +50,10 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   const clean = document.querySelector<HTMLElement>("#clean")!;
   const findings = document.querySelector<HTMLElement>("#findings")!;
   const download = document.querySelector<HTMLButtonElement>("#download")!;
+  const keyPicker = document.querySelector<HTMLElement>("#key-picker")!;
+  const keyColumn = document.querySelector<HTMLSelectElement>("#key-column")!;
+  const keyLoose = document.querySelector<HTMLInputElement>("#key-loose")!;
+  const keyText = document.querySelector<HTMLElement>("#key-line")!;
   let reportText = "";
 
   const SEVERITY_LABELS = { error: "Error", warning: "Warning", info: "Info" };
@@ -70,20 +92,52 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   }
 
   let latest: File | undefined;
+  let prepared: PreparedCsv | undefined;
+
+  // Header names go in via textContent, like the findings.
+  function fillKeyColumns(header: string[] | null) {
+    const none = el("option", "", "None");
+    none.value = "";
+    const options = (header ?? []).map((name, i) => {
+      const option = el("option", "", name.trim() === "" ? `Column ${i + 1}` : name);
+      option.value = String(i);
+      return option;
+    });
+    keyColumn.replaceChildren(none, ...options);
+    keyPicker.hidden = options.length === 0;
+  }
+
+  // Runs on opening a file and on every key change; the file is parsed and the other
+  // checks run only once, in prepareCsv.
+  function show() {
+    if (!latest || !prepared) return;
+    const key =
+      keyColumn.value === ""
+        ? undefined
+        : { column: Number(keyColumn.value), ignoreCaseAndSpaces: keyLoose.checked };
+    const report = buildReport(prepared, key);
+    reportText = renderText(latest.name, report);
+    fileName.textContent = latest.name;
+    summary.textContent = summaryLine(report);
+    keyText.textContent = keyLine(report);
+    keyText.hidden = !report.key;
+    clean.hidden = report.groups.length > 0;
+    findings.replaceChildren(...report.groups.map(renderGroup));
+    result.hidden = false;
+  }
 
   async function open(file: File) {
     latest = file;
     const text = await file.text();
     // A file opened while an earlier one was still reading wins, whichever finishes first.
     if (file !== latest) return;
-    const report = checkCsv(text);
-    reportText = renderText(file.name, report);
-    fileName.textContent = file.name;
-    summary.textContent = summaryLine(report);
-    clean.hidden = report.groups.length > 0;
-    findings.replaceChildren(...report.groups.map(renderGroup));
-    result.hidden = false;
+    prepared = prepareCsv(text);
+    fillKeyColumns(prepared.csv.header);
+    show();
   }
+
+  keyColumn.addEventListener("change", show);
+  keyLoose.addEventListener("change", show);
 
   input.addEventListener("change", () => {
     if (input.files?.[0]) void open(input.files[0]);
@@ -129,6 +183,25 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
   }
   #summary {
     color: var(--muted);
+    margin: 0 0 1rem;
+  }
+  .key-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin: 0 0 1rem;
+  }
+  .key-picker[hidden] {
+    display: none;
+  }
+  .key-picker label {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .key-picker select {
+    max-width: 100%;
+  }
+  #key-line {
     margin: 0 0 1rem;
   }
   .clean {

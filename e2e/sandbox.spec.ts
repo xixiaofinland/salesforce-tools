@@ -48,6 +48,9 @@ async function openCsv(
 const raggedFixture = readFileSync(
   fileURLToPath(new URL("./fixtures/ragged-duplicate.csv", import.meta.url)),
 );
+const repeatedKeyFixture = readFileSync(
+  fileURLToPath(new URL("./fixtures/repeated-key.csv", import.meta.url)),
+);
 
 test("sandbox pages ship the CSP header", async ({ request }) => {
   const res = await request.get("/sandbox/csv-precheck/");
@@ -113,9 +116,66 @@ test("a file with ragged rows and a duplicate header shows those findings", asyn
   );
 });
 
+test("repeated rows show, and picking a key column shows its repeated values", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, repeatedKeyFixture.toString(), "repeated-key.csv");
+  await expect(frame.locator('[data-kind="duplicate-row"] .example')).toHaveText("Rows 2, 7");
+  await expect(frame.locator('[data-kind="duplicate-key"]')).toHaveCount(0);
+  await expect(frame.locator("#key-line")).toBeHidden();
+
+  await frame.locator("#key-column").selectOption({ label: "Account_Number__c" });
+  const keyed = frame.locator('[data-kind="duplicate-key"]');
+  await expect(keyed.locator(".finding-title")).toContainText(
+    'Repeated values in key column 2 "Account_Number__c"',
+  );
+  await expect(keyed.locator(".example")).toHaveText(['"AC-200": Rows 2, 4, 7']);
+  await expect(frame.locator("#key-line")).toHaveText(
+    'Key column 2 "Account_Number__c", compared exactly as written',
+  );
+
+  await frame.locator("#key-loose").check();
+  await expect(keyed.locator(".example")).toHaveText([
+    '"AC-100": Rows 1, 3',
+    '"AC-200": Rows 2, 4, 7',
+  ]);
+  await expect(frame.locator("#key-line")).toContainText(
+    "ignoring letter case and surrounding spaces",
+  );
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    frame.locator("#download").click(),
+  ]);
+  const body = await download.createReadStream().then(async (stream) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString();
+  });
+  expect(body).toContain('  - "AC-100": Rows 1, 3\n');
+
+  await frame.locator("#key-column").selectOption({ label: "None" });
+  await expect(keyed).toHaveCount(0);
+  await expect(frame.locator("#key-line")).toBeHidden();
+  await expect(frame.locator('[data-kind="duplicate-row"]')).toHaveCount(1);
+});
+
+test("opening another file resets the key column to its own headers", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, repeatedKeyFixture.toString(), "repeated-key.csv");
+  await frame.locator("#key-column").selectOption({ label: "Name" });
+  await expect(frame.locator('[data-kind="duplicate-key"]')).toHaveCount(1);
+
+  await openCsv(frame, "Id,\n1,a\n1,a\n", "other.csv");
+  await expect(frame.locator("#key-column option")).toHaveText(["None", "Id", "Column 2"]);
+  await expect(frame.locator("#key-column")).toHaveValue("");
+  await expect(frame.locator('[data-kind="duplicate-key"]')).toHaveCount(0);
+});
+
 test("thousands of ragged rows read as one finding with a count", async ({ page }) => {
   const frame = await sandbox(page);
-  await openCsv(frame, "a,b\n" + "1,2,3\n".repeat(5000));
+  // Distinct rows, so the duplicate-row check stays quiet.
+  const rows = Array.from({ length: 5000 }, (_, i) => `${i},2,3\n`).join("");
+  await openCsv(frame, "a,b\n" + rows);
   const finding = frame.locator(".finding");
   await expect(finding).toHaveCount(1);
   await expect(finding.locator(".count")).toHaveText("(5,000)");
