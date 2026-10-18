@@ -136,7 +136,7 @@ export const delimiter: Check = (csv) =>
           severity: "warning",
           title: "The file is not comma-delimited",
           explanation:
-            "Excel in many European languages saves CSV files with semicolons, and some tools export tabs. The Bulk API “doesn't support any delimiter except for a comma”, so with Use Bulk API or Use Bulk API 2.0 on, save the file comma-delimited instead. Without Bulk API, Data Loader can read it if you select the same delimiter in its Settings: tab, or semicolon under its other-characters delimiter options. Otherwise each line reads as one long value.",
+            "Excel saves CSV files with semicolons when its decimal separator is a comma, and some tools export tabs. The Bulk API “doesn't support any delimiter except for a comma”, so with Use Bulk API or Use Bulk API 2.0 on, save the file comma-delimited instead. Without Bulk API, Data Loader can read it if you select the same delimiter in its Settings: tab, or semicolon under its other-characters delimiter options. Otherwise each line reads as one long value.",
           detail: `The file is ${DELIMITER_NAMES[csv.delimiter]}-delimited`,
         },
       ];

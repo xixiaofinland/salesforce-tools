@@ -1,5 +1,5 @@
 // Encoding checks on the file's bytes, docs/research/data-loader-csv-facts.md section 5
-// and implication 10.
+// and implication 10; the Excel and VS Code advice is sourced there too.
 import type { Finding } from "../findings";
 import type { ParsedCsv } from "../parse";
 
@@ -40,7 +40,7 @@ export function encodingChecks(bytes: Uint8Array, csv: ParsedCsv): Finding[] {
       severity: "error",
       title: "The file starts with a byte order mark",
       explanation:
-        "The file begins with a UTF-8 byte order mark (BOM), invisible bytes that Excel's “CSV UTF-8” format and some editors add. Salesforce knowledge article 000383918 says Data Loader version 28 and later does not support such files and stops with the error shown; whether current versions still reject a BOM is unconfirmed. To be safe, save the file without one: in Notepad choose the encoding “UTF-8” rather than “UTF-8 with BOM”, in VS Code use Save with Encoding and “UTF-8”, or download it as CSV from Google Sheets.",
+        "The file begins with a UTF-8 byte order mark (BOM), invisible bytes some programs write at the start of a file. Salesforce knowledge article 000383918 says Data Loader version 28 and later does not support such files and stops with the error shown; whether current versions still reject a BOM is unconfirmed. To be safe, save the file as UTF-8 without the mark: in VS Code, for example, click the file's encoding in the status bar and save it without the BOM.",
       detail:
         "CSV Error: Invalid CSV file format. Please select a different file. Error getting header row from the CSV file",
     });
@@ -56,7 +56,7 @@ export function encodingChecks(bytes: Uint8Array, csv: ParsedCsv): Finding[] {
       severity: "error",
       title: "The file is not UTF-8",
       explanation:
-        "The Bulk API requires that “Files must be in UTF-8 format”, and Data Loader can be set to read every file as UTF-8. This file holds bytes that are not UTF-8, usually because it was saved as plain “CSV (Comma delimited)”, which uses an older encoding such as Windows-1252; accented letters and symbols such as é, ü, € or curly quotes would then load garbled or as �. Only the first such place is shown. In Excel, save the file as “CSV UTF-8 (Comma delimited)” instead; that format adds a byte order mark, so check the file again and remove the mark if it is reported.",
+        "The Bulk API requires that “Files must be in UTF-8 format”, and Data Loader can be set to read every file as UTF-8. This file holds bytes that are not UTF-8, so it was saved in another encoding, and accented letters and symbols such as é, ü or € may load garbled. Only the first such place is shown. In Excel, save the file as “CSV UTF-8 (Comma delimited)”, which writes UTF-8, then open it here again to check it.",
       detail: row ? what[0].toUpperCase() + what.slice(1) : `In the header row: ${what}`,
       ...(row ? { location: { row: row.number, line: row.line } } : {}),
     });

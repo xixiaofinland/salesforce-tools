@@ -27,7 +27,7 @@ function perColumn(
   });
 }
 
-// Spaces, tabs and the no-break spaces Excel can paste in; line breaks have their own check.
+// Spaces, tabs and no-break spaces, all invisible in a cell; line breaks have their own check.
 const SURROUNDING_SPACE = /^[ \t ]|[ \t ]$/;
 
 export const surroundingSpaces: Check = (csv) => {
