@@ -59,6 +59,7 @@ const bomFixture = readFileSync(
   fileURLToPath(new URL("./fixtures/bom-trailing-space.csv", import.meta.url)),
 );
 const idsFixture = readFileSync(fileURLToPath(new URL("./fixtures/ids.csv", import.meta.url)));
+const datesFixture = readFileSync(fileURLToPath(new URL("./fixtures/dates.csv", import.meta.url)));
 
 async function downloadBytes(download: Download): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -189,6 +190,41 @@ test("bad IDs show their findings, and 15-character IDs convert to 18", async ({
       .replace("001D000000IqhSL,", "001D000000IqhSLIAZ,")
       .replace("001R0000005hDFY\n", "001R0000005hDFYIA2\n")
       .replace("00300000003T2PG\n", "00300000003T2PGAA0\n"),
+  );
+});
+
+test("slash dates in both orders conflict with either date setting", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, datesFixture, "dates.csv");
+  await expect(frame.locator("#date-line")).toHaveText(
+    'Date column: column 2 "Due" (Use European date format off)',
+  );
+  await expect(frame.locator("#european")).not.toBeChecked();
+  const kinds = () =>
+    frame
+      .locator(".finding")
+      .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
+  expect(await kinds()).toEqual(["invalid-date", "date-order-conflict"]);
+
+  const conflict = frame.locator('[data-kind="date-order-conflict"]');
+  await expect(conflict.locator(".severity")).toHaveText("Error");
+  await expect(conflict.locator(".example")).toHaveText(
+    'Row 1 (line 2), column 2 "Due": "13/02/2024" can only be day first (dd/MM/yyyy), but Use European date format is off; row 2 "02/13/2024" can only be month first, so the column mixes both orders',
+  );
+  await expect(frame.locator('[data-kind="invalid-date"] .example')).toHaveText(
+    'Row 1 (line 2), column 2 "Due": Error converting value to correct data type: Failed to parse date: 13/02/2024',
+  );
+
+  // The setting re-runs the checks on the file already open.
+  await frame.locator("#european").check();
+  await expect(frame.locator("#date-line")).toHaveText(
+    'Date column: column 2 "Due" (Use European date format on)',
+  );
+  await expect(conflict.locator(".example")).toHaveText(
+    'Row 2 (line 3), column 2 "Due": "02/13/2024" can only be month first (MM/dd/yyyy), but Use European date format is on; row 1 "13/02/2024" can only be day first, so the column mixes both orders',
+  );
+  await expect(frame.locator('[data-kind="invalid-date"] .example')).toHaveText(
+    'Row 2 (line 3), column 2 "Due": Error converting value to correct data type: Failed to parse date: 02/13/2024',
   );
 });
 

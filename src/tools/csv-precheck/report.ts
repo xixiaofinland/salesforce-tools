@@ -1,4 +1,5 @@
 import { CHECKS } from "./checks";
+import { dateChecks } from "./checks/dates";
 import { comparisonMode, duplicateKeys, type KeyColumn } from "./checks/duplicates";
 import { encodingChecks } from "./checks/encoding";
 import { batchLimit } from "./checks/size";
@@ -9,6 +10,7 @@ import {
   type Finding,
   type FindingGroup,
 } from "./findings";
+import { dateColumns, type DateSettings } from "./dates";
 import { idColumns, type IdColumn } from "./ids";
 import { DELIMITER_NAMES, parseCsv, type Delimiter, type ParsedCsv } from "./parse";
 
@@ -20,6 +22,9 @@ export interface Report {
   groups: FindingGroup[];
   // Columns read as Salesforce IDs, by name or by their values.
   idColumns: IdColumn[];
+  // Columns read as dates, and the setting their slash dates were judged by.
+  dateColumns: IdColumn[];
+  european: boolean;
   // The key column checked for repeated values, when the user picked one.
   key?: KeyColumn & { name: string };
 }
@@ -48,15 +53,31 @@ export function prepareFile(bytes: Uint8Array, checks: Check[] = CHECKS): Prepar
   return { csv, findings: [...encodingChecks(bytes, csv), ...findings] };
 }
 
-export function buildReport({ csv, findings }: PreparedCsv, key?: KeyColumn): Report {
+// Data Loader's default: Use European date format is off.
+export const DEFAULT_DATE_SETTINGS: DateSettings = { european: false };
+
+// The key column and the date setting are the user's choices, so their checks run here, on
+// every change, rather than once in prepareCsv.
+export function buildReport(
+  { csv, findings }: PreparedCsv,
+  key?: KeyColumn,
+  dates: DateSettings = DEFAULT_DATE_SETTINGS,
+): Report {
   const name = key && csv.header?.[key.column];
   const keyed = key && name !== undefined ? { ...key, name } : undefined;
+  const named = (column: number) => ({ column, name: csv.header![column] });
   return {
     delimiter: csv.delimiter,
     rowCount: csv.rows.length,
     columnCount: csv.header?.length ?? 0,
-    idColumns: idColumns(csv).map((column) => ({ column, name: csv.header![column] })),
-    groups: groupFindings(keyed ? [...findings, ...duplicateKeys(csv, keyed)] : findings),
+    idColumns: idColumns(csv).map(named),
+    dateColumns: dateColumns(csv).map(named),
+    european: dates.european,
+    groups: groupFindings([
+      ...findings,
+      ...dateChecks(csv, dates),
+      ...(keyed ? duplicateKeys(csv, keyed) : []),
+    ]),
     ...(keyed ? { key: keyed } : {}),
   };
 }
@@ -81,13 +102,23 @@ export function keyLine(report: Report): string {
   return `Key ${where}, compared ${comparisonMode(report.key)}`;
 }
 
-// Says which columns the ID checks ran on, so a report with no ID problems still shows it.
-export function idLine(report: Report): string {
-  if (report.idColumns.length === 0) return "";
-  const columns = report.idColumns.map(({ column, name }) =>
+function columnList(label: string, columns: IdColumn[]): string {
+  const where = columns.map(({ column, name }) =>
     formatLocation({ column: { index: column + 1, name } }),
   );
-  return `ID ${columns.length === 1 ? "column" : "columns"}: ${columns.join(", ")}`;
+  return `${label} ${where.length === 1 ? "column" : "columns"}: ${where.join(", ")}`;
+}
+
+// Says which columns the ID checks ran on, so a report with no ID problems still shows it.
+export function idLine(report: Report): string {
+  return report.idColumns.length === 0 ? "" : columnList("ID", report.idColumns);
+}
+
+// Says which columns the date checks ran on, and how slash dates were read.
+export function dateLine(report: Report): string {
+  if (report.dateColumns.length === 0) return "";
+  const setting = `Use European date format ${report.european ? "on" : "off"}`;
+  return `${columnList("Date", report.dateColumns)} (${setting})`;
 }
 
 export function exampleLine(example: FindingGroup["examples"][number]): string {
@@ -98,6 +129,7 @@ export function exampleLine(example: FindingGroup["examples"][number]): string {
 export function renderText(fileName: string, report: Report): string {
   const lines = [`File: ${fileName}`, summaryLine(report)];
   if (report.idColumns.length > 0) lines.push(idLine(report));
+  if (report.dateColumns.length > 0) lines.push(dateLine(report));
   if (report.key) lines.push(keyLine(report));
   lines.push("");
   if (report.groups.length === 0) lines.push("No problems found.");

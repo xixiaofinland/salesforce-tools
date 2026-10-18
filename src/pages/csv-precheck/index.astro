@@ -71,6 +71,18 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
         converts every 15-character ID to 18 characters, which do not depend on letter case.
       </li>
       <li>
+        <strong>Dates.</strong> It finds the date columns by their values and checks each value
+        against the formats Data Loader accepts, such as <code>yyyy-MM-dd</code> and
+        <code>yyyy-MM-ddTHH:mm:ss.SSS+0000</code>, rejecting days that do not exist, such as
+        <code>2024-02-30</code>, and dates outside 1700 to 4000. Tick
+        <strong>Use European date format</strong> to match the same setting in Data Loader: slash
+        dates are then read as <code>dd/MM/yyyy</code> instead of <code>MM/dd/yyyy</code>. A value
+        such as <code>13/02/2024</code> shows which order a column uses, so it flags a column in the
+        other order from the setting, and warns when every value reads either way. It also warns
+        about offsets written with a colon, such as <code>+01:00</code>, and about times in date
+        columns, which can shift a date by a day.
+      </li>
+      <li>
         <strong>Spaces.</strong> Data Loader does not trim values, so it lists the columns with
         values that start or end with a space, and any space next to a double quote, as in
         <code>"John", "Smith"</code>, which the Bulk API rejects. It never changes a value itself.
@@ -139,6 +151,9 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
       </li>
       <li>
         <code>MISSING_ARGUMENT: Id not specified in an update call</code>
+      </li>
+      <li>
+        <code>Error converting value to correct data type: Failed to parse date: 2024-02-30</code>
       </li>
     </ul>
     <p>
