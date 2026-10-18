@@ -77,10 +77,13 @@ function build(
   return { year, month, day, ...(time ? { time } : {}), colonOffset };
 }
 
+// Like Data Loader: trimmed, with a trailing Z, read as GMT, dropped.
+const normalize = (value: string) => value.trim().replace(/[zZ]$/, "");
+
 // The value read the way Data Loader would, or null when it would report "Failed to parse
-// date". Like Data Loader it trims the value and reads a trailing Z as GMT.
+// date".
 export function parseDate(value: string, { european }: DateSettings): ParsedDate | null {
-  const v = value.trim().replace(/[zZ]$/, "");
+  const v = normalize(value);
   let m = FORMATS.isoT.exec(v);
   if (m) {
     const [, y, mo, d, h, mi, s, ms, , oh, om, gh, gm, , ch, cm] = m;
@@ -105,7 +108,7 @@ export function parseDate(value: string, { european }: DateSettings): ParsedDate
 
 // The two numbers before the year in a slash date, whose order the European setting decides.
 export function slashParts(value: string): [number, number] | undefined {
-  const m = FORMATS.slash.exec(value.trim());
+  const m = FORMATS.slash.exec(normalize(value));
   return m ? [Number(m[1]), Number(m[2])] : undefined;
 }
 

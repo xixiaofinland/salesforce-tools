@@ -113,6 +113,7 @@ describe("slashParts", () => {
   it("returns the two parts before the year of a slash date, with or without a time", () => {
     expect(slashParts("13/02/2024")).toEqual([13, 2]);
     expect(slashParts("2/13/2024 10:00:00")).toEqual([2, 13]);
+    expect(slashParts(" 2/13/2024 10:00:00Z")).toEqual([2, 13]);
     expect(slashParts("2024-02-13")).toBeUndefined();
   });
 });

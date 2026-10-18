@@ -9,6 +9,7 @@ import {
   slashParts,
   type DateSettings,
   type ParsedDate,
+  type Time,
 } from "../dates";
 import type { DataRow, ParsedCsv } from "../parse";
 
@@ -17,8 +18,9 @@ type Base = Pick<Finding, "kind" | "severity" | "title" | "explanation">;
 interface DateColumn {
   column: number;
   name: string;
-  // The column's non-blank values with their rows.
-  values: { row: DataRow; value: string }[];
+  // The column's non-blank values, trimmed as Data Loader trims them, with their rows and
+  // their reading under the current setting, parsed once for every check.
+  values: { row: DataRow; value: string; date: ParsedDate | null }[];
 }
 
 const at = (row: DataRow, { column, name }: DateColumn) => ({
@@ -37,12 +39,12 @@ const INVALID: Base = {
     "Most values in these columns are dates, but these match none of the formats Data Loader accepts, or name a day or time that does not exist, such as 2024-02-30. Use yyyy-MM-dd for a date and yyyy-MM-ddTHH:mm:ss.SSS+0000 for a date and time. Slash dates are read as MM/dd/yyyy, or as dd/MM/yyyy when Use European date format is on.",
 };
 
-function invalidDates(column: DateColumn, settings: DateSettings): Finding[] {
+function invalidDates(column: DateColumn): Finding[] {
   return column.values
-    .filter(({ value }) => parseDate(value, settings) === null)
+    .filter(({ date }) => date === null)
     .map(({ row, value }) => ({
       ...INVALID,
-      detail: `Error converting value to correct data type: Failed to parse date: ${value.trim()}`,
+      detail: `Error converting value to correct data type: Failed to parse date: ${value}`,
       location: at(row, column),
     }));
 }
@@ -62,14 +64,13 @@ const isoDate = ({ year, month, day }: ParsedDate) => `${pad(year, 4)}-${pad(mon
 const EARLIEST = "1700-01-01";
 const LATEST = "4000-12-31";
 
-function outOfRange(column: DateColumn, settings: DateSettings): Finding[] {
-  return column.values.flatMap(({ row, value }) => {
-    const date = parseDate(value, settings);
+function outOfRange(column: DateColumn): Finding[] {
+  return column.values.flatMap(({ row, value, date }) => {
     if (!date) return [];
     const iso = isoDate(date);
     const side = iso < EARLIEST ? `before ${EARLIEST}` : iso > LATEST ? `after ${LATEST}` : "";
     if (!side) return [];
-    const detail = `${JSON.stringify(value.trim())} is ${iso}, ${side}`;
+    const detail = `${JSON.stringify(value)} is ${iso}, ${side}`;
     return [{ ...RANGE, detail, location: at(row, column) }];
   });
 }
@@ -82,10 +83,10 @@ const COLON: Base = {
     "An offset such as +01:00 is fine for the Salesforce APIs, but Data Loader's own parser can fail on it with “Error converting value to correct data type: Failed to parse date” (KB 000383025). Remove the colon, as in +0100, or put GMT before it, as in GMT+01:00.",
 };
 
-function colonOffsets(column: DateColumn, settings: DateSettings): Finding[] {
-  const found = column.values.filter(({ value }) => parseDate(value, settings)?.colonOffset);
+function colonOffsets(column: DateColumn): Finding[] {
+  const found = column.values.filter(({ date }) => date?.colonOffset);
   if (found.length === 0) return [];
-  const example = found[0].value.trim();
+  const example = found[0].value;
   const offset = /[+-]\d{2}:\d{2}$/;
   const fixed = [
     example.replace(offset, (o) => o.replace(":", "")),
@@ -140,9 +141,9 @@ const MONTHS = [
 const onOff = ({ european }: DateSettings) => (european ? "on" : "off");
 
 function slashOrder(column: DateColumn, settings: DateSettings): Finding[] {
-  const slashed = column.values.flatMap(({ row, value }) => {
-    const parts = slashParts(value);
-    return parts ? [{ row, value: value.trim(), parts }] : [];
+  const slashed = column.values.flatMap((entry) => {
+    const parts = slashParts(entry.value);
+    return parts ? [{ ...entry, parts }] : [];
   });
   if (slashed.length === 0) return [];
   // Only a value that is a real date in its order decides it.
@@ -163,9 +164,9 @@ function slashOrder(column: DateColumn, settings: DateSettings): Finding[] {
     return [{ ...CONFLICT, detail, location: at(wrong.row, column) }];
   }
   if (dayFirst || monthFirst) return [];
-  const example = slashed.find(({ value }) => parseDate(value, settings));
+  const example = slashed.find(({ date }) => date);
   if (!example) return [];
-  const { day, month, year } = parseDate(example.value, settings)!;
+  const { day, month, year } = example.date!;
   return [
     {
       ...AMBIGUOUS,
@@ -197,20 +198,15 @@ function isDateOnlyName(name: string): boolean {
   return n.endsWith("date") && !n.includes("time") && !DATETIME_FIELDS.has(n);
 }
 
-const isMidnight = (date: ParsedDate) =>
-  !date.time ||
-  (date.time.hour === 0 &&
-    date.time.minute === 0 &&
-    date.time.second === 0 &&
-    date.time.millisecond === 0);
+const isMidnight = ({ hour, minute, second, millisecond }: Time) =>
+  hour === 0 && minute === 0 && second === 0 && millisecond === 0;
 
-function timesInDates(column: DateColumn, settings: DateSettings): Finding[] {
-  const timed = column.values.flatMap(({ row, value }) => {
-    const date = parseDate(value, settings);
-    return date?.time ? [{ row, value: value.trim(), date }] : [];
-  });
+function timesInDates(column: DateColumn): Finding[] {
+  const timed = column.values.flatMap(({ row, value, date }) =>
+    date?.time ? [{ row, value, time: date.time }] : [],
+  );
   if (timed.length === 0) return [];
-  if (!isDateOnlyName(column.name) && !timed.every(({ date }) => isMidnight(date))) return [];
+  if (!isDateOnlyName(column.name) && !timed.every(({ time }) => isMidnight(time))) return [];
   const rows = rowList(timed.map(({ row }) => row.number));
   return [
     {
@@ -221,15 +217,16 @@ function timesInDates(column: DateColumn, settings: DateSettings): Finding[] {
   ];
 }
 
-const CHECKS = [invalidDates, outOfRange, slashOrder, colonOffsets, timesInDates];
+const DATE_CHECKS = [invalidDates, outOfRange, slashOrder, colonOffsets, timesInDates];
 
 export function dateChecks(csv: ParsedCsv, settings: DateSettings): Finding[] {
   const columns: DateColumn[] = dateColumns(csv).map((column) => ({
     column,
     name: csv.header![column],
     values: csv.rows
-      .map((row) => ({ row, value: row.fields[column] ?? "" }))
-      .filter(({ value }) => !isBlankDate(value)),
+      .map((row) => ({ row, value: (row.fields[column] ?? "").trim() }))
+      .filter(({ value }) => !isBlankDate(value))
+      .map((entry) => ({ ...entry, date: parseDate(entry.value, settings) })),
   }));
-  return CHECKS.flatMap((check) => columns.flatMap((column) => check(column, settings)));
+  return DATE_CHECKS.flatMap((check) => columns.flatMap((column) => check(column, settings)));
 }
