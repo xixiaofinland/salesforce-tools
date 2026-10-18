@@ -56,7 +56,7 @@ export function encodingChecks(bytes: Uint8Array, csv: ParsedCsv): Finding[] {
       severity: "error",
       title: "The file is not UTF-8",
       explanation:
-        "The Bulk API requires that “Files must be in UTF-8 format”, and Data Loader can be set to read every file as UTF-8. This file holds bytes that are not UTF-8, usually because it was saved as plain “CSV (Comma delimited)”, which uses an older encoding such as Windows-1252; accented letters and symbols such as é, ü, € or curly quotes would then load garbled or as �. Only the first such place is shown. In Excel, save the file as “CSV UTF-8 (Comma delimited)” instead.",
+        "The Bulk API requires that “Files must be in UTF-8 format”, and Data Loader can be set to read every file as UTF-8. This file holds bytes that are not UTF-8, usually because it was saved as plain “CSV (Comma delimited)”, which uses an older encoding such as Windows-1252; accented letters and symbols such as é, ü, € or curly quotes would then load garbled or as �. Only the first such place is shown. In Excel, save the file as “CSV UTF-8 (Comma delimited)” instead; that format adds a byte order mark, so check the file again and remove the mark if it is reported.",
       detail: row ? what[0].toUpperCase() + what.slice(1) : `In the header row: ${what}`,
       ...(row ? { location: { row: row.number, line: row.line } } : {}),
     });

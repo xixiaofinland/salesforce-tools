@@ -109,7 +109,7 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
     field = "";
     closed = false;
   };
-  const spacedQuote = () => {
+  const markSpacedQuote = () => {
     if (spacedQuotes.at(-1) !== record.length) spacedQuotes.push(record.length);
   };
 
@@ -143,7 +143,7 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
       recordStart = i;
       recordLine = ++line;
     } else {
-      if ((ch === " " && closed) || (ch === '"' && /^ +$/.test(field))) spacedQuote();
+      if ((ch === " " && closed) || (ch === '"' && /^ +$/.test(field))) markSpacedQuote();
       field += ch;
       i++;
     }
