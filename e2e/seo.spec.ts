@@ -29,9 +29,10 @@ test("every page in the sitemap has its own title, description, canonical URL an
   page,
   request,
 }) => {
+  const urls = await sitemapUrls(request);
   const titles = new Set<string>();
   const descriptions = new Set<string>();
-  for (const url of await sitemapUrls(request)) {
+  for (const url of urls) {
     const path = new URL(url).pathname;
     await page.goto(path);
     const head = page.locator("head");
@@ -53,8 +54,16 @@ test("every page in the sitemap has its own title, description, canonical URL an
       "content",
       "summary",
     );
+    await expect(head.locator('meta[name="twitter:title"]'), path).toHaveAttribute(
+      "content",
+      title,
+    );
+    await expect(head.locator('meta[name="twitter:description"]'), path).toHaveAttribute(
+      "content",
+      description!,
+    );
   }
-  expect(titles.size).toBe((await sitemapUrls(request)).length);
+  expect(titles.size).toBe(urls.length);
   expect(descriptions.size).toBe(titles.size);
 });
 

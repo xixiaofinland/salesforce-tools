@@ -32,8 +32,8 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
     <ul>
       <li>
         <strong>Delimiter.</strong> It works out whether the file uses commas, semicolons or tabs.
-        Excel in many European locales saves CSV files with semicolons; Data Loader reads them only
-        if you choose that delimiter in its settings, and the Bulk API accepts nothing but commas.
+        Data Loader reads a semicolon or tab file only if you choose that delimiter in its settings,
+        and the Bulk API accepts nothing but commas.
       </li>
       <li>
         <strong>Header row.</strong> Data Loader skips blank lines and reads the first remaining
@@ -44,8 +44,9 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
         header line creates.
       </li>
       <li>
-        <strong>Duplicate column names.</strong> Data Loader matches column names ignoring case, so
-        <code>Name</code> and <code>name</code> count as the same column.
+        <strong>Duplicate column names.</strong> Data Loader warns when two names match exactly. Its
+        field mapping also ignores case, so <code>Name</code> and <code>name</code> share one entry
+        and cannot be mapped to fields separately.
       </li>
       <li>
         <strong>Unclosed quotes.</strong> A value that opens a double quote and never closes it
@@ -53,13 +54,17 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
       </li>
       <li>
         <strong>Column counts.</strong> Every row must have exactly as many columns as the header. A
-        value holding the delimiter or a line break without double quotes around it is the usual
+        value holding the delimiter or a line break without double quotes around it is a common
         cause.
       </li>
     </ul>
 
     <h2>Data Loader errors it helps prevent</h2>
-    <p>Each problem above matches an error Data Loader shows, word for word:</p>
+    <p>
+      These are Data Loader's messages for the problems above, word for word. The empty and
+      duplicate column warnings appear as you choose the file and ask whether to continue; the
+      others stop the load.
+    </p>
     <ul class="errors">
       <li>
         <code>Error getting header row from the CSV file.</code>

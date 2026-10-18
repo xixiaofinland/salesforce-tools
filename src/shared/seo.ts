@@ -1,12 +1,13 @@
 import type { Tool } from "../tools/registry";
 import { SANDBOX_PATH_PREFIX } from "./sandbox/csp";
 
-const absolute = (site: string, pathname: string) =>
-  new URL(pathname.replace(/^\/?/, "/"), site).href;
+// Astro reports built pages without a leading slash ("csv-precheck/").
+const rooted = (pathname: string) => pathname.replace(/^\/?/, "/");
+
+const absolute = (site: string, pathname: string) => new URL(rooted(pathname), site).href;
 
 // Sandbox pages are only meant to be seen inside their host page's iframe.
-const isSandbox = (pathname: string) =>
-  pathname.replace(/^\/?/, "/").startsWith(SANDBOX_PATH_PREFIX);
+const isSandbox = (pathname: string) => rooted(pathname).startsWith(SANDBOX_PATH_PREFIX);
 
 // `pathnames` are the built pages, as Astro's build:done hook reports them.
 export function renderSitemap(site: string, pathnames: string[]): string {
