@@ -69,10 +69,10 @@ describe("renderText", () => {
     expect(text).toContain("7 rows, 2 columns, comma-delimited");
     expect(text).toContain("[ERROR] Rows with more columns than the header (7)");
     expect(text).toContain(
-      "  - Row 1: Error reading data row #1: the number of columns (3) exceeds the number of columns in the header (2)",
+      "  - Row 1 (line 2): Error reading data row #0: the number of columns (3) exceeds the number of columns in the header (2)",
     );
     expect(text).toContain("  ... and 2 more");
-    expect(text).not.toContain("Row 6:");
+    expect(text).not.toContain("Row 6 ");
   });
 
   it("names a column by position when its header cell is empty", () => {

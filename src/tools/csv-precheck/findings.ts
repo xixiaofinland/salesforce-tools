@@ -3,8 +3,9 @@ import type { ParsedCsv } from "./parse";
 export type Severity = "error" | "warning" | "info";
 
 export interface Location {
-  // Data Loader's "data row #": the first row after the header is 1.
+  // Data row from 1, as DataRow.number, and the file line it starts on.
   row?: number;
+  line?: number;
   // 1-based position in the header, with the header's name for it.
   column?: { index: number; name: string };
 }
@@ -58,7 +59,13 @@ export function groupFindings(findings: Finding[]): FindingGroup[] {
 
 export function formatLocation(location: Location): string {
   const parts: string[] = [];
-  if (location.row !== undefined) parts.push(`Row ${location.row}`);
+  if (location.row !== undefined) {
+    parts.push(
+      location.line === undefined
+        ? `Row ${location.row}`
+        : `Row ${location.row} (line ${location.line})`,
+    );
+  }
   if (location.column) {
     const { index, name } = location.column;
     parts.push(name.trim() === "" ? `column ${index}` : `column ${index} "${name}"`);

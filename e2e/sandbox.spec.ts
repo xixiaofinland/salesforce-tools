@@ -105,11 +105,11 @@ test("a file with ragged rows and a duplicate header shows those findings", asyn
   const tooMany = frame.locator('[data-kind="row-too-many-columns"]');
   await expect(tooMany.locator(".count")).toHaveText("(2)");
   await expect(tooMany.locator(".example")).toHaveText([
-    "Row 3: Error reading data row #3: the number of columns (5) exceeds the number of columns in the header (4)",
-    "Row 4: Error reading data row #4: the number of columns (5) exceeds the number of columns in the header (4)",
+    "Row 3 (line 4): Error reading data row #2: the number of columns (5) exceeds the number of columns in the header (4)",
+    "Row 4 (line 5): Error reading data row #3: the number of columns (5) exceeds the number of columns in the header (4)",
   ]);
   await expect(frame.locator('[data-kind="row-too-few-columns"] .example')).toHaveText(
-    "Row 2: Error reading data row #2: the number of columns (3) is less than the number of columns in the header (4)",
+    "Row 2 (line 3): Error reading data row #1: the number of columns (3) is less than the number of columns in the header (4)",
   );
 });
 

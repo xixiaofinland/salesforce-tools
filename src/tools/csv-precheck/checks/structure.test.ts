@@ -12,13 +12,22 @@ const run = (check: typeof missingHeader, text: string) => check(parseCsv(text))
 const kinds = (check: typeof missingHeader, text: string) => run(check, text).map((f) => f.kind);
 
 describe("missingHeader", () => {
-  it("flags an empty file", () => {
-    expect(run(missingHeader, "")).toMatchObject([{ kind: "empty-file", severity: "error" }]);
+  it("flags an empty file with Data Loader's text", () => {
+    expect(run(missingHeader, "")).toMatchObject([
+      {
+        kind: "no-header",
+        severity: "error",
+        detail: "Error getting header row from the CSV file.",
+      },
+    ]);
   });
 
-  it("flags a blank first line as no header row", () => {
-    expect(kinds(missingHeader, "\n1,2\n")).toEqual(["no-header"]);
-    expect(kinds(missingHeader, "  \n")).toEqual(["no-header"]);
+  it("flags a file of only blank lines", () => {
+    expect(kinds(missingHeader, "\n\r\n\n")).toEqual(["no-header"]);
+  });
+
+  it("takes the first non-blank line as the header, as Data Loader does", () => {
+    expect(run(missingHeader, "\n\nId,Name\n1,Acme\n")).toEqual([]);
   });
 
   it("accepts a header, even with no data rows", () => {
@@ -29,7 +38,7 @@ describe("missingHeader", () => {
 
 describe("emptyHeaderCell", () => {
   it("flags each empty header cell with Data Loader's text", () => {
-    expect(run(emptyHeaderCell, "Id,,Name,\n1,2,3,4\n")).toMatchObject([
+    expect(run(emptyHeaderCell, 'Id,,Name,""\n1,2,3,4\n')).toMatchObject([
       {
         kind: "empty-header-cell",
         severity: "error",
@@ -40,13 +49,12 @@ describe("emptyHeaderCell", () => {
     ]);
   });
 
-  it("treats a header cell of only spaces as empty", () => {
-    expect(kinds(emptyHeaderCell, "Id, \n")).toEqual(["empty-header-cell"]);
+  it("leaves a header cell of spaces alone, as Data Loader's check does", () => {
+    expect(run(emptyHeaderCell, "Id, \n")).toEqual([]);
   });
 
   it("stays quiet when there is no header to check", () => {
     expect(run(emptyHeaderCell, "")).toEqual([]);
-    expect(run(emptyHeaderCell, "\n1,2\n")).toEqual([]);
     expect(run(emptyHeaderCell, "Id,Name\n")).toEqual([]);
   });
 });
@@ -59,6 +67,12 @@ describe("duplicateHeader", () => {
         severity: "error",
         detail: 'Columns 2 "Name", 4 "name", 5 "NAME"',
       },
+    ]);
+  });
+
+  it("adds Data Loader's warning when two names match exactly", () => {
+    expect(run(duplicateHeader, "Id,Name,name,Name\n")).toMatchObject([
+      { detail: 'Columns 2 "Name", 3 "name", 4 "Name". A duplicate column [Name] is found' },
     ]);
   });
 
@@ -79,15 +93,20 @@ describe("duplicateHeader", () => {
 });
 
 describe("unclosedQuote", () => {
-  it("flags the row where a quote opens and never closes", () => {
+  it("flags the row where a quote opens, with Data Loader's text", () => {
     expect(run(unclosedQuote, 'Id,Note\n1,ok\n2,"open\n3,lost\n')).toMatchObject([
-      { kind: "unclosed-quote", severity: "error", location: { row: 2 } },
+      {
+        kind: "unclosed-quote",
+        severity: "error",
+        detail: "EOF reached before closing an opened quote",
+        location: { row: 2, line: 3 },
+      },
     ]);
   });
 
   it("says so when the quote opens in the header", () => {
     expect(run(unclosedQuote, 'Id,"Note\n1,2\n')).toMatchObject([
-      { detail: "The quote opens in the header row" },
+      { detail: "The quote opens in the header row. EOF reached before closing an opened quote" },
     ]);
   });
 
@@ -97,14 +116,14 @@ describe("unclosedQuote", () => {
 });
 
 describe("columnCount", () => {
-  it("quotes Data Loader's error for a row with too many columns", () => {
+  it("quotes Data Loader's error for a row with too many columns, counting from 0", () => {
     expect(run(columnCount, "Id,Name\n1,Acme\n2,Acme,Inc\n")).toMatchObject([
       {
         kind: "row-too-many-columns",
         severity: "error",
         detail:
-          "Error reading data row #2: the number of columns (3) exceeds the number of columns in the header (2)",
-        location: { row: 2 },
+          "Error reading data row #1: the number of columns (3) exceeds the number of columns in the header (2)",
+        location: { row: 2, line: 3 },
       },
     ]);
   });
@@ -114,10 +133,24 @@ describe("columnCount", () => {
       {
         kind: "row-too-few-columns",
         detail:
-          "Error reading data row #1: the number of columns (2) is less than the number of columns in the header (3)",
-        location: { row: 1 },
+          "Error reading data row #0: the number of columns (2) is less than the number of columns in the header (3)",
+        location: { row: 1, line: 2 },
       },
     ]);
+  });
+
+  it("does not flag blank lines, which Data Loader skips", () => {
+    expect(run(columnCount, "Id,Name\n\n1,Acme\n\n\n")).toEqual([]);
+  });
+
+  it("leaves blank lines out of Data Loader's row number", () => {
+    expect(run(columnCount, "Id,Name\n1,Acme\n\n2\n")).toMatchObject([
+      { detail: expect.stringContaining("data row #1:"), location: { row: 2, line: 4 } },
+    ]);
+  });
+
+  it("flags a line of spaces, which Data Loader reads as a row", () => {
+    expect(kinds(columnCount, "Id,Name\n \n")).toEqual(["row-too-few-columns"]);
   });
 
   it("counts a quoted line break as part of one row", () => {

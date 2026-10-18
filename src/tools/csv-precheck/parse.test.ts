@@ -101,8 +101,8 @@ describe("parseCsv", () => {
       delimiter: ",",
       header: ["Id", "Name"],
       rows: [
-        { number: 1, fields: ["1", "Acme"] },
-        { number: 2, fields: ["2", "Beta"] },
+        { number: 1, line: 2, fields: ["1", "Acme"] },
+        { number: 2, line: 3, fields: ["2", "Beta"] },
       ],
       unclosedQuote: false,
     });
@@ -117,10 +117,31 @@ describe("parseCsv", () => {
     });
   });
 
+  it("skips blank lines without counting them, as Data Loader does", () => {
+    const csv = parseCsv('\r\nId,Name\n\n1,Acme\n""\n2,Beta\n\n\n');
+    expect(csv.header).toEqual(["Id", "Name"]);
+    expect(csv.rows).toEqual([
+      { number: 1, line: 4, fields: ["1", "Acme"] },
+      { number: 2, line: 6, fields: ["2", "Beta"] },
+    ]);
+  });
+
+  it("has no header when every line is blank", () => {
+    expect(parseCsv("\n\r\n\n").header).toBeNull();
+  });
+
+  it("keeps a line of spaces as a row", () => {
+    expect(parseCsv("a,b\n \n").rows).toEqual([{ number: 1, line: 2, fields: [" "] }]);
+  });
+
+  it("counts lines inside quoted values when placing the next row", () => {
+    expect(parseCsv('a,b\n1,"x\r\ny\nz"\n2,w\n').rows.map((r) => r.line)).toEqual([2, 5]);
+  });
+
   it("notes a quote left open at the end of the file", () => {
     const csv = parseCsv('a,b\n1,"open\n2,x\n');
     expect(csv.unclosedQuote).toBe(true);
-    expect(csv.rows).toEqual([{ number: 1, fields: ["1", "open\n2,x\n"] }]);
+    expect(csv.rows).toEqual([{ number: 1, line: 2, fields: ["1", "open\n2,x\n"] }]);
   });
 
   it("uses the detected delimiter", () => {
