@@ -1,0 +1,24 @@
+---
+// Pages served inside the sandboxed iframe: no analytics, ads or anything third-party.
+import { SANDBOX_CSP } from "./sandbox/csp";
+import "./global.css";
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="content-security-policy" content={SANDBOX_CSP} />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

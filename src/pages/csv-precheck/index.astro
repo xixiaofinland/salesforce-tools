@@ -1,0 +1,18 @@
+---
+import AdSlot from "../../shared/AdSlot.astro";
+import Layout from "../../shared/Layout.astro";
+import SandboxFrame from "../../shared/SandboxFrame.astro";
+import { toolBySlug } from "../../tools/registry";
+
+const tool = toolBySlug("csv-precheck");
+---
+
+<Layout title={`${tool.name}: Check Your CSV Before Import`} description={tool.description}>
+  <h1>{tool.name}</h1>
+  <p>
+    Open a CSV file to check it. The file is opened in your browser and never leaves your computer.
+    Don't take our word for it: disconnect from the internet and try again, it still works.
+  </p>
+  <SandboxFrame tool={tool.slug} title={tool.name} />
+  <AdSlot name="csv-precheck-below-tool" />
+</Layout>

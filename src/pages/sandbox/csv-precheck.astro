@@ -1,0 +1,70 @@
+---
+import SandboxLayout from "../../shared/SandboxLayout.astro";
+---
+
+<SandboxLayout title="CSV Pre-check">
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".csv,text/csv" />
+    <span>Open a CSV file, or drop it here</span>
+  </label>
+  <output id="result" aria-live="polite"></output>
+  <button type="button" id="download" hidden>
+    Download report
+  </button>
+</SandboxLayout>
+
+<script>
+  import { renderReport, summarize } from "../../tools/csv-precheck/summary";
+
+  const input = document.querySelector<HTMLInputElement>("#file")!;
+  const drop = document.querySelector<HTMLLabelElement>("#drop")!;
+  const result = document.querySelector<HTMLOutputElement>("#result")!;
+  const download = document.querySelector<HTMLButtonElement>("#download")!;
+  let report = "";
+
+  async function open(file: File) {
+    const summary = summarize(await file.text());
+    report = renderReport(file.name, summary);
+    result.textContent = `${file.name}: ${summary.lines} lines, ${summary.bytes} bytes`;
+    download.hidden = false;
+  }
+
+  input.addEventListener("change", () => {
+    if (input.files?.[0]) void open(input.files[0]);
+  });
+  drop.addEventListener("dragover", (e) => e.preventDefault());
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files[0];
+    if (file) void open(file);
+  });
+  download.addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([report], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "csv-precheck-report.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
+
+<style>
+  .drop {
+    display: block;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 2rem;
+    margin: 1rem;
+    text-align: center;
+    cursor: pointer;
+  }
+  .drop input {
+    display: block;
+    margin: 0 auto 0.5rem;
+  }
+  output,
+  button {
+    display: block;
+    margin: 1rem;
+  }
+</style>
