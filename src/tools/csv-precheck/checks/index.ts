@@ -1,5 +1,6 @@
 import type { Check } from "../findings";
 import { duplicateRows } from "./duplicates";
+import { caseOnlyIds, idChecksum, malformedIds, missingIds, mixedIdLengths } from "./ids";
 import {
   columnCount,
   delimiter,
@@ -18,6 +19,11 @@ export const CHECKS: Check[] = [
   unclosedQuote,
   columnCount,
   delimiter,
+  malformedIds,
+  idChecksum,
+  mixedIdLengths,
+  caseOnlyIds,
+  missingIds,
   spaceAroundQuote,
   surroundingSpaces,
   duplicateRows,

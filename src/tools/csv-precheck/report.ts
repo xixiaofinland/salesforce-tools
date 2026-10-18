@@ -9,6 +9,7 @@ import {
   type Finding,
   type FindingGroup,
 } from "./findings";
+import { idColumns, type IdColumn } from "./ids";
 import { DELIMITER_NAMES, parseCsv, type Delimiter, type ParsedCsv } from "./parse";
 
 export interface Report {
@@ -17,6 +18,8 @@ export interface Report {
   rowCount: number;
   columnCount: number;
   groups: FindingGroup[];
+  // Columns read as Salesforce IDs, by name or by their values.
+  idColumns: IdColumn[];
   // The key column checked for repeated values, when the user picked one.
   key?: KeyColumn & { name: string };
 }
@@ -52,6 +55,7 @@ export function buildReport({ csv, findings }: PreparedCsv, key?: KeyColumn): Re
     delimiter: csv.delimiter,
     rowCount: csv.rows.length,
     columnCount: csv.header?.length ?? 0,
+    idColumns: idColumns(csv).map((column) => ({ column, name: csv.header![column] })),
     groups: groupFindings(keyed ? [...findings, ...duplicateKeys(csv, keyed)] : findings),
     ...(keyed ? { key: keyed } : {}),
   };
@@ -77,6 +81,15 @@ export function keyLine(report: Report): string {
   return `Key ${where}, compared ${comparisonMode(report.key)}`;
 }
 
+// Says which columns the ID checks ran on, so a report with no ID problems still shows it.
+export function idLine(report: Report): string {
+  if (report.idColumns.length === 0) return "";
+  const columns = report.idColumns.map(({ column, name }) =>
+    formatLocation({ column: { index: column + 1, name } }),
+  );
+  return `ID ${columns.length === 1 ? "column" : "columns"}: ${columns.join(", ")}`;
+}
+
 export function exampleLine(example: FindingGroup["examples"][number]): string {
   const where = example.location ? formatLocation(example.location) : "";
   return [where, example.detail].filter(Boolean).join(": ");
@@ -84,6 +97,7 @@ export function exampleLine(example: FindingGroup["examples"][number]): string {
 
 export function renderText(fileName: string, report: Report): string {
   const lines = [`File: ${fileName}`, summaryLine(report)];
+  if (report.idColumns.length > 0) lines.push(idLine(report));
   if (report.key) lines.push(keyLine(report));
   lines.push("");
   if (report.groups.length === 0) lines.push("No problems found.");

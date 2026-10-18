@@ -58,6 +58,7 @@ const twentyFiveRowsFixture = readFileSync(
 const bomFixture = readFileSync(
   fileURLToPath(new URL("./fixtures/bom-trailing-space.csv", import.meta.url)),
 );
+const idsFixture = readFileSync(fileURLToPath(new URL("./fixtures/ids.csv", import.meta.url)));
 
 async function downloadBytes(download: Download): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -86,6 +87,7 @@ test("a clean file shows no problems with its counts, and the report downloads",
   await openCsv(frame);
   await expect(frame.locator("#file-name")).toHaveText("accounts.csv");
   await expect(frame.locator("#summary")).toHaveText("1 row, 2 columns, comma-delimited");
+  await expect(frame.locator("#id-line")).toHaveText('ID column: column 1 "Id"');
   await expect(frame.locator("#clean")).toBeVisible();
   await expect(frame.locator(".finding")).toHaveCount(0);
 
@@ -99,7 +101,7 @@ test("a clean file shows no problems with its counts, and the report downloads",
     return Buffer.concat(chunks).toString();
   });
   expect(body).toBe(
-    "File: accounts.csv\n1 row, 2 columns, comma-delimited\n\nNo problems found.\n",
+    'File: accounts.csv\n1 row, 2 columns, comma-delimited\nID column: column 1 "Id"\n\nNo problems found.\n',
   );
 });
 
@@ -153,6 +155,48 @@ test("a file with a byte order mark and a trailing space shows both findings", a
   await expect(frame.locator('[data-kind="surrounding-spaces"] .example')).toHaveText(
     'column 2 "Name": Row 1, such as "Acme "',
   );
+});
+
+test("bad IDs show their findings, and 15-character IDs convert to 18", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, idsFixture, "ids.csv");
+  await expect(frame.locator("#id-line")).toHaveText(
+    'ID columns: column 1 "Id", column 3 "AccountId"',
+  );
+  const kinds = await frame
+    .locator(".finding")
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
+  expect(kinds).toEqual(["malformed-id", "id-checksum", "mixed-id-lengths"]);
+
+  const malformed = frame.locator('[data-kind="malformed-id"]');
+  await expect(malformed.locator(".severity")).toHaveText("Error");
+  await expect(malformed.locator(".example")).toHaveText(
+    'Row 2 (line 3), column 1 "Id": "001D000000IqhS": 14 characters, not 15 or 18',
+  );
+  await expect(frame.locator('[data-kind="id-checksum"] .example')).toHaveText(
+    'Row 3 (line 4), column 1 "Id": "001xx000003DHurAAA" ends in "AAA", but its first 15 characters give "AAG"',
+  );
+
+  await expect(frame.locator("#convert-plan")).toHaveText("3 IDs of 15 characters to convert.");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    frame.locator("#convert-download").click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("ids-18-char-ids.csv");
+  expect((await downloadBytes(download)).toString()).toBe(
+    idsFixture
+      .toString()
+      .replace("001D000000IqhSL,", "001D000000IqhSLIAZ,")
+      .replace("001R0000005hDFY\n", "001R0000005hDFYIA2\n")
+      .replace("00300000003T2PG\n", "00300000003T2PGAA0\n"),
+  );
+});
+
+test("a file without 15-character IDs offers no conversion", async ({ page }) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, "Name,Phone\nAcme,555-0100\n");
+  await expect(frame.locator("#id-line")).toBeHidden();
+  await expect(frame.locator("#convert")).toBeHidden();
 });
 
 test("repeated rows show, and picking a key column shows its repeated values", async ({ page }) => {
@@ -288,7 +332,7 @@ test("opening a second file replaces the first report", async ({ page }) => {
   await openCsv(frame, raggedFixture.toString(), "ragged-duplicate.csv");
   await expect(frame.locator(".finding")).toHaveCount(4);
 
-  await openCsv(frame, "Id,Name\n1,Acme\n2,Beta\n", "clean.csv");
+  await openCsv(frame, "Name,Phone\nAcme,555-0100\nBeta,555-0101\n", "clean.csv");
   await expect(frame.locator("#file-name")).toHaveText("clean.csv");
   await expect(frame.locator("#summary")).toHaveText("2 rows, 2 columns, comma-delimited");
   await expect(frame.locator(".finding")).toHaveCount(0);
