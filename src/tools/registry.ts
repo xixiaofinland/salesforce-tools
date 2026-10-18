@@ -2,6 +2,8 @@ export interface Tool {
   slug: string;
   name: string;
   description: string;
+  // schema.org category for the host page's SoftwareApplication JSON-LD.
+  applicationCategory: "DeveloperApplication" | "BusinessApplication";
 }
 
 export const tools: Tool[] = [
@@ -9,7 +11,8 @@ export const tools: Tool[] = [
     slug: "csv-precheck",
     name: "Data Loader CSV Pre-check",
     description:
-      "Check a CSV before importing it with Data Loader: IDs, dates, encoding, duplicates. Runs in your browser; the file never leaves your computer.",
+      "Check a CSV before importing it with Data Loader: header row, column counts, duplicate columns, quotes. Runs in your browser; the file never leaves your computer.",
+    applicationCategory: "DeveloperApplication",
   },
 ];
 

@@ -2,12 +2,18 @@
 import AdSlot from "../../shared/AdSlot.astro";
 import Layout from "../../shared/Layout.astro";
 import SandboxFrame from "../../shared/SandboxFrame.astro";
+import { toolJsonLd } from "../../shared/seo";
 import { toolBySlug } from "../../tools/registry";
 
 const tool = toolBySlug("csv-precheck");
+const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
 ---
 
-<Layout title={`${tool.name}: Check Your CSV Before Import`} description={tool.description}>
+<Layout
+  title={`${tool.name}: Check Your CSV Before Import`}
+  description={tool.description}
+  jsonLd={toolJsonLd(tool, Astro.site!.href)}
+>
   <h1>{tool.name}</h1>
   <p>
     Open a CSV file to check it. The file is opened in your browser and never leaves your computer.
@@ -15,4 +21,113 @@ const tool = toolBySlug("csv-precheck");
   </p>
   <SandboxFrame tool={tool.slug} title={tool.name} />
   <AdSlot name="csv-precheck-below-tool" />
+
+  <!-- Every claim about Data Loader here comes from docs/research/data-loader-csv-facts.md. -->
+  <section class="content">
+    <h2>What it checks</h2>
+    <p>
+      The checks follow how Data Loader's own CSV reader handles a file, taken from its open-source
+      code and Salesforce's help articles.
+    </p>
+    <ul>
+      <li>
+        <strong>Delimiter.</strong> It works out whether the file uses commas, semicolons or tabs.
+        Data Loader reads a semicolon or tab file only if you choose that delimiter in its settings,
+        and the Bulk API accepts nothing but commas.
+      </li>
+      <li>
+        <strong>Header row.</strong> Data Loader skips blank lines and reads the first remaining
+        line as the field names. A file with no such line cannot be loaded.
+      </li>
+      <li>
+        <strong>Empty header cells</strong>, including the ones a stray delimiter at the end of the
+        header line creates.
+      </li>
+      <li>
+        <strong>Duplicate column names.</strong> Data Loader warns when two names match exactly. Its
+        field mapping also ignores case, so <code>Name</code> and <code>name</code> share one entry
+        and cannot be mapped to fields separately.
+      </li>
+      <li>
+        <strong>Unclosed quotes.</strong> A value that opens a double quote and never closes it
+        swallows the rest of the file.
+      </li>
+      <li>
+        <strong>Column counts.</strong> Every row must have exactly as many columns as the header. A
+        value holding the delimiter or a line break without double quotes around it is a common
+        cause.
+      </li>
+    </ul>
+
+    <h2>Data Loader errors it helps prevent</h2>
+    <p>
+      These are Data Loader's messages for the problems above, word for word. The empty and
+      duplicate column warnings appear as you choose the file and ask whether to continue; the
+      others stop the load.
+    </p>
+    <ul class="errors">
+      <li>
+        <code>Error getting header row from the CSV file.</code>
+      </li>
+      <li>
+        <code>An empty column is found in the header row</code>
+      </li>
+      <li>
+        <code>A duplicate column [Name] is found</code>
+      </li>
+      <li>
+        <code>EOF reached before closing an opened quote</code>
+      </li>
+      <li>
+        <code>
+          Error reading data row #2: the number of columns (5) exceeds the number of columns in the
+          header (4)
+        </code>
+      </li>
+      <li>
+        <code>
+          Error reading data row #1: the number of columns (3) is less than the number of columns in
+          the header (4)
+        </code>
+      </li>
+    </ul>
+    <p>
+      A row with the wrong number of columns stops the whole operation, so no row after it loads.
+      The report lists every such row at once, instead of one per failed run.
+    </p>
+
+    <h2>FAQ</h2>
+    <h3>Is my file uploaded?</h3>
+    <p>
+      No. The file is opened in your browser and read there. The tool runs in a sandboxed frame
+      whose content security policy blocks every network request, so it has no way to send your data
+      anywhere. To verify it yourself: load this page, disconnect from the internet, then open your
+      file. The check still works. The code is open source: see the
+      <a href={`${source}/src/pages/sandbox/csv-precheck.astro`}>tool's page</a> and its
+      <a href={`${source}/src/shared/sandbox/csp.ts`}>security policy</a> on GitHub.
+    </p>
+    <h3>Does it change my file?</h3>
+    <p>
+      No. It only reads the file. You can download the report as a text file; the CSV itself is left
+      as it is.
+    </p>
+    <h3>Why is Data Loader's row number one less than the report's?</h3>
+    <p>
+      Data Loader counts data rows from 0 and leaves out blank lines, so the first row under the
+      header is its row #0. The report counts from 1 and also gives the line in the file.
+    </p>
+  </section>
 </Layout>
+
+<style>
+  .content {
+    margin-top: 2rem;
+  }
+  .content li {
+    margin-bottom: 0.5rem;
+  }
+  /* Data Loader's messages are long and must not widen the page on a phone. */
+  .errors code {
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -1,13 +1,16 @@
 ---
 import Analytics from "./Analytics.astro";
 import "./global.css";
+import { jsonLdScript } from "./seo";
 
 interface Props {
   title: string;
   description: string;
+  // schema.org structured data, e.g. a tool's SoftwareApplication.
+  jsonLd?: object;
 }
-const { title, description } = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site);
+const { title, description, jsonLd } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <!doctype html>
@@ -18,6 +21,15 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Salesforce Tools" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    {jsonLd && <script is:inline type="application/ld+json" set:html={jsonLdScript(jsonLd)} />}
     <Analytics />
   </head>
   <body>
