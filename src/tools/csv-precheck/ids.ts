@@ -40,13 +40,19 @@ export const is18 = (value: string) => value.length === 18 && isWellFormedId(val
 // A value too blank to be an ID: checked as missing, never as malformed.
 export const isEmptyValue = (value: string) => value.trim() === "";
 
-// Id, or a name ending in Id as a word: AccountId, OwnerID, Account_ID. Matching any
-// ending in the letters i, d would take in Paid or Valid, whose values would all read as
-// malformed IDs; a lower-case accountid is still found by its values.
+// The column holding the record's own ID, which update and delete need filled in. Data
+// Loader maps headers to fields ignoring case.
+export const isRecordIdName = (name: string) => name.trim().toLowerCase() === "id";
+
+// Id, or a name ending in Id as a word: AccountId, OwnerID, Account_ID.
 export function isIdName(name: string): boolean {
   const n = name.trim();
-  return /^id$/i.test(n) || /Id$/.test(n) || /[a-z]ID$/.test(n) || /[^A-Za-z]id$/i.test(n);
+  return isRecordIdName(n) || /Id$/.test(n) || /[a-z]ID$/.test(n) || /[^A-Za-z]id$/i.test(n);
 }
+
+// Any other name ending in the letters i, d, such as accountid, but also Paid or Valid, whose
+// values would all read as malformed IDs. Such a column counts once a value looks like an ID.
+const endsInId = (name: string) => /id$/i.test(name.trim());
 
 // 15 or 18 letters and digits with at least one of each, so 15-digit numbers and 15-letter
 // words do not pass for IDs.
@@ -58,7 +64,7 @@ const looksLikeId = (value: string) =>
 const cache = new WeakMap<ParsedCsv, number[]>();
 
 // 0-based positions of the columns holding IDs: by header name, or because more than half
-// of their non-empty values look like IDs.
+// of their non-empty values look like IDs (any of them, for a name ending in the letters i, d).
 export function idColumns(csv: ParsedCsv): number[] {
   const cached = cache.get(csv);
   if (cached) return cached;
@@ -72,7 +78,7 @@ export function idColumns(csv: ParsedCsv): number[] {
       filled++;
       if (looksLikeId(value)) like++;
     }
-    return like * 2 > filled ? [column] : [];
+    return like * 2 > filled || (like > 0 && endsInId(name)) ? [column] : [];
   });
   cache.set(csv, columns);
   return columns;

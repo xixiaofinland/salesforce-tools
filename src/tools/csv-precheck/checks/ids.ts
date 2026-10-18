@@ -7,6 +7,7 @@ import {
   is15,
   is18,
   isEmptyValue,
+  isRecordIdName,
   isWellFormedId,
   type IdColumn,
 } from "../ids";
@@ -121,10 +122,10 @@ export const caseOnlyIds: Check = (csv) =>
       }));
   });
 
-// Only a column named Id holds the record's own ID; empty lookups are allowed.
+// Only the record's own ID is required; an empty lookup is allowed.
 export const missingIds: Check = (csv) =>
   (csv.header ?? []).flatMap((name, column) => {
-    if (name.trim().toLowerCase() !== "id") return [];
+    if (!isRecordIdName(name)) return [];
     const rows = csv.rows.filter((row) => isEmptyValue(row.fields[column] ?? ""));
     if (rows.length === 0) return [];
     return [

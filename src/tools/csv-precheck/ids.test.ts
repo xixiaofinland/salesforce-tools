@@ -78,6 +78,11 @@ describe("idColumns", () => {
     expect(idColumns(csv)).toEqual([0]);
   });
 
+  it("finds a lower-case accountid once any value looks like an ID, but not Paid", () => {
+    const csv = parseCsv("accountid,Paid,ACCOUNTID\n001D000000IqhS,yes,x\n001D000000IqhSL,no,y\n");
+    expect(idColumns(csv)).toEqual([0]);
+  });
+
   it("needs more than half of the non-empty values to look like IDs", () => {
     const half = parseCsv("Ref\n001D000000IqhSL\nx\n");
     const most = parseCsv("Ref\n001D000000IqhSL\n001R0000005hDFY\nx\n\n");
