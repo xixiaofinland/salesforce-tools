@@ -1,5 +1,5 @@
 import { CHECKS } from "./checks";
-import { duplicateKeys, type KeyColumn } from "./checks/duplicates";
+import { comparisonMode, duplicateKeys, type KeyColumn } from "./checks/duplicates";
 import {
   formatLocation,
   groupFindings,
@@ -64,12 +64,9 @@ export function summaryLine(report: Report): string {
 // Says which key column was checked and how, so a report with no repeats still shows it.
 export function keyLine(report: Report): string {
   if (!report.key) return "";
-  const { column, name, ignoreCaseAndSpaces } = report.key;
+  const { column, name } = report.key;
   const where = formatLocation({ column: { index: column + 1, name } });
-  const mode = ignoreCaseAndSpaces
-    ? "ignoring letter case and surrounding spaces"
-    : "exactly as written";
-  return `Key ${where}, compared ${mode}`;
+  return `Key ${where}, compared ${comparisonMode(report.key)}`;
 }
 
 export function exampleLine(example: FindingGroup["examples"][number]): string {

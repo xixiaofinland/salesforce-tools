@@ -55,7 +55,7 @@ describe("duplicateKeys", () => {
       "Values were compared exactly as written.",
     );
     expect(duplicateKeys(csv, loose(0))[0].explanation).toContain(
-      "Values were compared ignoring letter case and spaces around them.",
+      "Values were compared ignoring letter case and surrounding spaces.",
     );
   });
 

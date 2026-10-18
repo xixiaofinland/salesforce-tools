@@ -40,6 +40,10 @@ export const duplicateRows: Check = (csv) =>
     detail: rowList(group.map((row) => row.number)),
   }));
 
+export function comparisonMode({ ignoreCaseAndSpaces }: KeyColumn): string {
+  return ignoreCaseAndSpaces ? "ignoring letter case and surrounding spaces" : "exactly as written";
+}
+
 // Not in CHECKS: it runs only once the user picks a key column, and again on each change.
 export function duplicateKeys(csv: ParsedCsv, key: KeyColumn): Finding[] {
   const name = csv.header?.[key.column];
@@ -53,14 +57,11 @@ export function duplicateKeys(csv: ParsedCsv, key: KeyColumn): Finding[] {
     return ignoreCaseAndSpaces ? value.trim().toLowerCase() : value;
   };
   const where = formatLocation({ column: { index: column + 1, name } });
-  const comparison = ignoreCaseAndSpaces
-    ? "Values were compared ignoring letter case and spaces around them."
-    : "Values were compared exactly as written.";
   return repeats(csv.rows, keyOf).map((group) => ({
     kind: "duplicate-key",
     severity: "warning" as const,
     title: `Repeated values in key ${where}`,
-    explanation: `${comparison} If this column is the external ID or another unique field you upsert or insert on, rows sharing a value can fail or end up updating the same record; otherwise they may create duplicate records. Keep one row per value, or check that each repeat is intended.`,
+    explanation: `Values were compared ${comparisonMode(key)}. If this column is the external ID or another unique field you upsert or insert on, rows sharing a value can fail or end up updating the same record; otherwise they may create duplicate records. Keep one row per value, or check that each repeat is intended.`,
     detail: `${JSON.stringify(valueOf(group[0]))}: ${rowList(group.map((row) => row.number))}`,
   }));
 }
