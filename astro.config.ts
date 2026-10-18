@@ -1,9 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { defineConfig } from "astro/config";
 import { renderHeaders } from "./src/shared/sandbox/headers";
+import { renderRobots, renderSitemap } from "./src/shared/seo";
+
+const site = "https://tools.salesforceway.com";
 
 export default defineConfig({
-  site: "https://tools.salesforceway.com",
+  site,
   // Its inline scripts would break under the sandbox CSP.
   devToolbar: { enabled: false },
   trailingSlash: "always",
@@ -22,6 +25,17 @@ export default defineConfig({
       hooks: {
         "astro:build:done": async ({ dir }) => {
           await writeFile(new URL("_headers", dir), renderHeaders());
+        },
+      },
+    },
+    {
+      name: "seo-files",
+      hooks: {
+        // Built from the pages actually generated, so new pages (articles too) join the sitemap.
+        "astro:build:done": async ({ dir, pages }) => {
+          const pathnames = pages.map((p) => p.pathname).sort();
+          await writeFile(new URL("sitemap.xml", dir), renderSitemap(site, pathnames));
+          await writeFile(new URL("robots.txt", dir), renderRobots(site));
         },
       },
     },
