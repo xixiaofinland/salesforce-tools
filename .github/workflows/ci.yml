@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   # issue-loop merges on this check (TEST_CHECK=test), so it carries all of quality.

@@ -3,3 +3,9 @@ dist/
 node_modules/
 test-results/
 playwright-report/
+
+# issue-loop hand-off files between the agent and the script
+.loop/
+
+# Claude Code per-machine permissions
+.claude/settings.local.json
