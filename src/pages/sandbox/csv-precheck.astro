@@ -4,29 +4,79 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
 
 <SandboxLayout title="CSV Pre-check">
   <label class="drop" id="drop">
-    <input type="file" id="file" accept=".csv,text/csv" />
+    <input type="file" id="file" accept=".csv,.tsv,.txt,text/csv" />
     <span>Open a CSV file, or drop it here</span>
   </label>
-  <output id="result" aria-live="polite"></output>
-  <button type="button" id="download" hidden>
-    Download report
-  </button>
+  <section id="result" aria-live="polite" hidden>
+    <h2 id="file-name"></h2>
+    <p id="summary"></p>
+    <p id="clean" class="clean" hidden>
+      No problems found.
+    </p>
+    <div id="findings"></div>
+    <button type="button" id="download">
+      Download report
+    </button>
+  </section>
 </SandboxLayout>
 
 <script>
-  import { renderReport, summarize } from "../../tools/csv-precheck/summary";
+  import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
+  import { checkCsv, renderText, summaryLine } from "../../tools/csv-precheck/report";
 
   const input = document.querySelector<HTMLInputElement>("#file")!;
   const drop = document.querySelector<HTMLLabelElement>("#drop")!;
-  const result = document.querySelector<HTMLOutputElement>("#result")!;
+  const result = document.querySelector<HTMLElement>("#result")!;
+  const fileName = document.querySelector<HTMLElement>("#file-name")!;
+  const summary = document.querySelector<HTMLElement>("#summary")!;
+  const clean = document.querySelector<HTMLElement>("#clean")!;
+  const findings = document.querySelector<HTMLElement>("#findings")!;
   const download = document.querySelector<HTMLButtonElement>("#download")!;
-  let report = "";
+  let reportText = "";
+
+  const SEVERITY_LABELS = { error: "Error", warning: "Warning", info: "Info" };
+
+  function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = "") {
+    const node = document.createElement(tag);
+    node.className = className;
+    node.textContent = text;
+    return node;
+  }
+
+  // Built with textContent only: file contents end up in titles and details.
+  function renderGroup(group: FindingGroup): HTMLElement {
+    const section = el("section", `finding ${group.severity}`);
+    section.dataset.kind = group.kind;
+    const heading = el("h3", "finding-title");
+    heading.append(
+      el("span", "severity", SEVERITY_LABELS[group.severity]),
+      ` ${group.title} `,
+      el("span", "count", `(${group.count.toLocaleString("en-US")})`),
+    );
+    section.append(heading, el("p", "explanation", group.explanation));
+    const list = el("ul", "examples");
+    for (const example of group.examples) {
+      if (!example.location && !example.detail) continue;
+      const item = el("li", "example");
+      if (example.location) item.append(el("strong", "where", formatLocation(example.location)));
+      if (example.location && example.detail) item.append(": ");
+      if (example.detail) item.append(el("code", "detail", example.detail));
+      list.append(item);
+    }
+    if (list.childElementCount > 0) section.append(list);
+    const more = group.count - group.examples.length;
+    if (more > 0) section.append(el("p", "more", `and ${more.toLocaleString("en-US")} more`));
+    return section;
+  }
 
   async function open(file: File) {
-    const summary = summarize(await file.text());
-    report = renderReport(file.name, summary);
-    result.textContent = `${file.name}: ${summary.lines} lines, ${summary.bytes} bytes`;
-    download.hidden = false;
+    const report = checkCsv(await file.text());
+    reportText = renderText(file.name, report);
+    fileName.textContent = file.name;
+    summary.textContent = summaryLine(report);
+    clean.hidden = report.groups.length > 0;
+    findings.replaceChildren(...report.groups.map(renderGroup));
+    result.hidden = false;
   }
 
   input.addEventListener("change", () => {
@@ -39,7 +89,7 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     if (file) void open(file);
   });
   download.addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([report], { type: "text/plain" }));
+    const url = URL.createObjectURL(new Blob([reportText], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = "csv-precheck-report.txt";
@@ -53,18 +103,87 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     display: block;
     border: 2px dashed var(--border);
     border-radius: 8px;
-    padding: 2rem;
+    padding: 2rem 1rem;
     margin: 1rem;
     text-align: center;
     cursor: pointer;
   }
   .drop input {
     display: block;
+    max-width: 100%;
     margin: 0 auto 0.5rem;
   }
-  output,
-  button {
-    display: block;
+  #result {
     margin: 1rem;
+    overflow-wrap: anywhere;
+  }
+  #result h2 {
+    font-size: 1.1rem;
+    margin: 0;
+  }
+  #summary {
+    color: var(--muted);
+    margin: 0 0 1rem;
+  }
+  .clean {
+    border-left: 4px solid #1a7f37;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+  }
+  .finding {
+    border-left: 4px solid var(--border);
+    padding: 0.25rem 0.75rem;
+    margin: 0 0 1rem;
+  }
+  .finding.error {
+    border-color: #cf222e;
+  }
+  .finding.warning {
+    border-color: #bf8700;
+  }
+  .finding.info {
+    border-color: var(--accent);
+  }
+  .finding-title {
+    font-size: 1rem;
+    margin: 0.25rem 0;
+  }
+  .severity {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    vertical-align: middle;
+  }
+  .error .severity {
+    color: #cf222e;
+  }
+  .warning .severity {
+    color: #9a6700;
+  }
+  .info .severity {
+    color: var(--accent);
+  }
+  .count,
+  .more {
+    color: var(--muted);
+  }
+  .explanation {
+    margin: 0.25rem 0;
+  }
+  .examples {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+  }
+  .detail {
+    font-size: 0.85em;
+  }
+  .more {
+    margin: 0.25rem 0;
+  }
+  #download {
+    display: block;
   }
 </style>
