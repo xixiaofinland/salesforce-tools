@@ -182,6 +182,14 @@ BOM, KB 000383918 https://help.salesforce.com/s/articleView?id=000383918
 > The following characters may appear at the start of a file containing a BOM. ... ^ ` ~ ¡ ¢ « µ ¸ Ä Ã Ð Ò
 > (Note: this KB is dated 2026 but its claim is version "28+"; whether the current Data Loader still rejects a BOM is UNVERIFIED. Treat a BOM as an error or warning anyway.)
 
+Saving as UTF-8, for the tool's advice (retrieved 2026-10-19):
+
+> Excel, File formats supported in Excel for Mac https://support.microsoft.com/en-us/excel/file-formats-supported-in-excel-for-mac: CSV UTF-8 (Comma delimited) "Exports the data on the active sheet to a text file that complies with UTF-8 Unicode encoding standards."
+> VS Code, Basic editing https://code.visualstudio.com/docs/editing/codebasics: "You can view the file encoding in the status bar." Clicking it offers to reopen or save the file with a different encoding.
+> VS Code 1.0 release notes https://code.visualstudio.com/updates/vMarch: "You can now save files with UTF-8 BOM encoding as well as convert existing files with or without BOM." The status bar tells UTF-8 and UTF-8 with BOM apart.
+> Excel, Import or export text (.txt or .csv) files https://support.microsoft.com/en-us/excel/get-started/import-or-export-text-txt-or-csv-files: "When you save a workbook as a .csv file, the default list separator (delimiter) is a comma." and "If you want to use a semi-colon as the default list separator when you Save As .csv, but need to limit the change to Excel, consider changing the default decimal separator to a comma."
+> UNVERIFIED (no vendor page found): whether Excel's "CSV UTF-8" writes a BOM, which encoding plain "CSV (Comma delimited)" uses, Notepad's encoding names, Google Sheets' CSV download.
+
 Header row, Bulk API doc (above URL):
 
 > The first row in a CSV file lists the field names for the object that you're processing. Each subsequent row corresponds to a record in Salesforce.

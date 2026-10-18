@@ -72,3 +72,15 @@ export function formatLocation(location: Location): string {
   }
   return parts.join(", ");
 }
+
+const ROWS_LISTED = 10;
+
+// Row numbers for a detail, the first few and a count of the rest.
+export function rowList(numbers: number[]): string {
+  const shown = numbers.slice(0, ROWS_LISTED).join(", ");
+  const more = numbers.length - ROWS_LISTED;
+  const label = numbers.length === 1 ? "Row" : "Rows";
+  return more > 0
+    ? `${label} ${shown} and ${more.toLocaleString("en-US")} more`
+    : `${label} ${shown}`;
+}

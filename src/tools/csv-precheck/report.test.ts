@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { groupFindings, type Check, type Finding } from "./findings";
-import { buildReport, checkCsv, keyLine, prepareCsv, renderText } from "./report";
+import { buildReport, checkCsv, keyLine, prepareCsv, prepareFile, renderText } from "./report";
 
 const finding = (kind: string, severity: Finding["severity"], row?: number): Finding => ({
   kind,
@@ -33,12 +33,27 @@ describe("groupFindings", () => {
 
 describe("checkCsv", () => {
   it("reports a clean file with its counts and delimiter", () => {
-    expect(checkCsv("Id;Name\n1;Acme\n2;Beta\n")).toEqual({
-      delimiter: ";",
+    expect(checkCsv("Id,Name\n1,Acme\n2,#N/A\n")).toEqual({
+      delimiter: ",",
       rowCount: 2,
       columnCount: 2,
       groups: [],
     });
+  });
+
+  it("never reports #N/A, the Bulk API's null token", () => {
+    const report = checkCsv("Id,Name,Date\n1,#N/A,#N/A\n2,Acme,2024-01-31\n");
+    expect(report.groups).toEqual([]);
+  });
+
+  it("warns about a semicolon-delimited file and spaces with the default checks", () => {
+    const report = checkCsv('Id;Name;Note\n1;Acme ;"two\nlines"\n2; "Beta";x\n');
+    expect(report.groups.map((g) => [g.kind, g.severity])).toEqual([
+      ["not-comma-delimited", "warning"],
+      ["space-around-quote", "warning"],
+      ["surrounding-spaces", "warning"],
+      ["line-breaks", "info"],
+    ]);
   });
 
   it("runs every check it is given on the parsed file", () => {
@@ -77,6 +92,32 @@ describe("prepareCsv", () => {
         examples: [{ detail: "10.2 MB, more than the Bulk API's 10 MB per batch" }],
       },
     ]);
+  });
+});
+
+describe("prepareFile", () => {
+  it("checks the bytes for a byte order mark and the text for spaces", () => {
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...Buffer.from("Id,Name\n1,Acme \n")]);
+    const prepared = prepareFile(bytes);
+    expect(prepared.csv.header).toEqual(["Id", "Name"]);
+    expect(buildReport(prepared).groups.map((g) => g.kind)).toEqual([
+      "utf8-bom",
+      "surrounding-spaces",
+    ]);
+  });
+
+  it("reads text that is not UTF-8 and still runs the other checks", () => {
+    const bytes = new Uint8Array([...Buffer.from("Id,Name\n1,Caf"), 0xe9, 0x0a, 0x32]);
+    expect(buildReport(prepareFile(bytes)).groups.map((g) => g.kind)).toEqual([
+      "not-utf8",
+      "row-too-few-columns",
+    ]);
+  });
+
+  it("measures the file's own bytes for the batch limit", () => {
+    const bytes = new Uint8Array(10_500_000).fill(0x61);
+    bytes.set(Buffer.from("Id\n"));
+    expect(buildReport(prepareFile(bytes)).groups.map((g) => g.kind)).toEqual(["batch-limit"]);
   });
 });
 

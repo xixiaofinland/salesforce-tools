@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseCsv } from "../parse";
 import {
   columnCount,
+  delimiter,
   duplicateHeader,
   emptyHeaderCell,
   missingHeader,
@@ -164,5 +165,28 @@ describe("columnCount", () => {
   it("flags every ragged row", () => {
     const text = "a,b\n" + "1,2,3\n".repeat(5000);
     expect(run(columnCount, text)).toHaveLength(5000);
+  });
+});
+
+describe("delimiter", () => {
+  it("warns about a semicolon-delimited file, as European Excel saves", () => {
+    expect(run(delimiter, "Id;Name\n1;Acme\n")).toMatchObject([
+      {
+        kind: "not-comma-delimited",
+        severity: "warning",
+        detail: "The file is semicolon-delimited",
+        explanation: expect.stringContaining("doesn't support any delimiter except for a comma"),
+      },
+    ]);
+  });
+
+  it("warns about a tab-delimited file", () => {
+    expect(run(delimiter, "Id\tName\n1\tAcme\n")).toMatchObject([
+      { detail: "The file is tab-delimited" },
+    ]);
+  });
+
+  it("accepts commas", () => {
+    expect(run(delimiter, "Id,Name\n1,Acme\n")).toEqual([]);
   });
 });
