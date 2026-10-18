@@ -21,6 +21,16 @@ This is a small site and a small bug is cheap. Decide rather than ask, and make 
 - `dev` is the integration branch. Every PR targets `dev` (`gh pr create --base dev`) and is squash-merged; the PR title must be a conventional commit (`feat: ...`, `fix: ...`), since it becomes the commit on `dev`.
 - `main` is production: Cloudflare deploys it to tools.salesforceway.com. It only moves by fast-forwarding to `dev` (`git push origin origin/dev:main`) once the maintainer has tried `dev`'s preview by hand. Hotfixes go through `dev` too, or the fast-forward breaks.
 
-## Issues
+## Agent skills
 
-GitHub Issues on xixiaofinland/salesforce-tools, via `gh`. Labels: `needs-triage` (maintainer evaluates), `needs-info` (waiting on the reporter), `ready-for-agent` (fully specified, an AFK agent can take it), `ready-for-human` (needs a person). issue-loop (`.issue-loop.conf`) takes `ready-for-agent` issues.
+### Issue tracker
+
+GitHub Issues on xixiaofinland/salesforce-tools, via `gh`; issue-loop (`.issue-loop.conf`) takes `ready-for-agent` issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles, label string = role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context. See `docs/agents/domain.md`.
