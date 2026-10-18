@@ -4,6 +4,8 @@ import { renderHeaders } from "./src/shared/sandbox/headers";
 
 export default defineConfig({
   site: "https://tools.salesforceway.com",
+  // Its inline scripts would break under the sandbox CSP.
+  devToolbar: { enabled: false },
   trailingSlash: "always",
   build: {
     // The sandbox CSP allows only 'self' scripts and styles, so nothing may be inlined.
