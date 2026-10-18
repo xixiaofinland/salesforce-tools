@@ -1,4 +1,5 @@
 import type { Check } from "../findings";
+import { duplicateRows } from "./duplicates";
 import {
   columnCount,
   duplicateHeader,
@@ -14,4 +15,5 @@ export const CHECKS: Check[] = [
   duplicateHeader,
   unclosedQuote,
   columnCount,
+  duplicateRows,
 ];

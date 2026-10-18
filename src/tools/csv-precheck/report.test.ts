@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { groupFindings, type Check, type Finding } from "./findings";
-import { checkCsv, renderText } from "./report";
+import { buildReport, checkCsv, keyLine, prepareCsv, renderText } from "./report";
 
 const finding = (kind: string, severity: Finding["severity"], row?: number): Finding => ({
   kind,
@@ -55,9 +55,65 @@ describe("checkCsv", () => {
       ["row-too-many-columns", 2],
     ]);
   });
+
+  it("warns about repeated rows with the default checks", () => {
+    expect(checkCsv("Id,Name\n1,a\n1,a\n").groups).toMatchObject([
+      { kind: "duplicate-row", severity: "warning", count: 1 },
+    ]);
+  });
+});
+
+describe("buildReport", () => {
+  const text = "Id,Ext\n1,a\n2,A\n3,a\n3,a\n";
+
+  it("adds the key column's repeated values to the file's findings", () => {
+    const report = buildReport(prepareCsv(text), { column: 1, ignoreCaseAndSpaces: false });
+    expect(report.groups.map((g) => [g.kind, g.count])).toEqual([
+      ["duplicate-row", 1],
+      ["duplicate-key", 1],
+    ]);
+    expect(report.groups[1].examples[0].detail).toBe('"a": Rows 1, 3, 4');
+  });
+
+  it("re-checks only the key column when the key changes", () => {
+    let runs = 0;
+    const counted: Check = () => {
+      runs++;
+      return [];
+    };
+    const prepared = prepareCsv(text, [counted]);
+    const byId = buildReport(prepared, { column: 0, ignoreCaseAndSpaces: false });
+    const byExt = buildReport(prepared, { column: 1, ignoreCaseAndSpaces: true });
+    const none = buildReport(prepared);
+    expect(runs).toBe(1);
+    expect(byId.groups[0].examples[0].detail).toBe('"3": Rows 3, 4');
+    expect(byExt.groups[0].examples[0].detail).toBe('"a": Rows 1, 2, 3, 4');
+    expect(none.groups).toEqual([]);
+  });
+
+  it("states the key column and comparison mode, even when nothing repeats", () => {
+    const prepared = prepareCsv("Id,Ext\n1,a\n");
+    expect(keyLine(buildReport(prepared, { column: 1, ignoreCaseAndSpaces: false }))).toBe(
+      'Key column 2 "Ext", compared exactly as written',
+    );
+    expect(keyLine(buildReport(prepared, { column: 1, ignoreCaseAndSpaces: true }))).toBe(
+      'Key column 2 "Ext", compared ignoring letter case and surrounding spaces',
+    );
+    expect(keyLine(buildReport(prepared))).toBe("");
+  });
 });
 
 describe("renderText", () => {
+  it("names the key column and its comparison mode under the summary", () => {
+    const report = buildReport(prepareCsv("Id,Ext\n1,a\n"), {
+      column: 1,
+      ignoreCaseAndSpaces: false,
+    });
+    expect(renderText("a.csv", report)).toBe(
+      'File: a.csv\n1 row, 2 columns, comma-delimited\nKey column 2 "Ext", compared exactly as written\n\nNo problems found.\n',
+    );
+  });
+
   it("states that a clean file has no problems", () => {
     expect(renderText("a.csv", checkCsv("Id,Name\n1,Acme\n"))).toBe(
       "File: a.csv\n1 row, 2 columns, comma-delimited\n\nNo problems found.\n",

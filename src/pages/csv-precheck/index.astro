@@ -57,6 +57,15 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
         value holding the delimiter or a line break without double quotes around it is a common
         cause.
       </li>
+      <li>
+        <strong>Repeated rows.</strong> Rows identical in every column, which would load as
+        duplicate records.
+      </li>
+      <li>
+        <strong>Repeated key values.</strong> Pick a key column, such as the external ID you upsert
+        on, to list the values that appear in more than one row. Values are compared exactly, or
+        optionally ignoring letter case and surrounding spaces; empty values are never counted.
+      </li>
     </ul>
 
     <h2>Data Loader errors it helps prevent</h2>
