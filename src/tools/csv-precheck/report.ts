@@ -1,5 +1,6 @@
 import { CHECKS } from "./checks";
 import { comparisonMode, duplicateKeys, type KeyColumn } from "./checks/duplicates";
+import { batchLimit } from "./checks/size";
 import {
   formatLocation,
   groupFindings,
@@ -32,9 +33,14 @@ export const DELIMITER_NAMES: Record<Delimiter, string> = {
   "\t": "tab",
 };
 
-export function prepareCsv(text: string, checks: Check[] = CHECKS): PreparedCsv {
+// size is the file's length in bytes; without it, the text's length in UTF-8.
+export function prepareCsv(
+  text: string,
+  checks: Check[] = CHECKS,
+  size = new TextEncoder().encode(text).byteLength,
+): PreparedCsv {
   const csv = parseCsv(text);
-  return { csv, findings: checks.flatMap((check) => check(csv)) };
+  return { csv, findings: [...checks.flatMap((check) => check(csv)), ...batchLimit(csv, size)] };
 }
 
 export function buildReport({ csv, findings }: PreparedCsv, key?: KeyColumn): Report {

@@ -63,6 +63,23 @@ describe("checkCsv", () => {
   });
 });
 
+describe("prepareCsv", () => {
+  it("suggests splitting by the file's size in bytes", () => {
+    const report = buildReport(prepareCsv("Id\n1\n", undefined, 10_500_000));
+    expect(report.groups).toMatchObject([{ kind: "batch-limit", severity: "info" }]);
+  });
+
+  it("measures text in UTF-8 bytes when no size is given", () => {
+    // 3,400,000 characters, but 10,200,000 bytes: each "€" takes three.
+    expect(checkCsv("Id\n" + "€".repeat(3_400_000) + "\n").groups).toMatchObject([
+      {
+        kind: "batch-limit",
+        examples: [{ detail: "10.2 MB, more than the Bulk API's 10 MB per batch" }],
+      },
+    ]);
+  });
+});
+
 describe("buildReport", () => {
   const text = "Id,Ext\n1,a\n2,A\n3,a\n3,a\n";
 
