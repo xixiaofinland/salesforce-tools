@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseCsv } from "../parse";
-import { columnCount, duplicateHeader, emptyHeaderCell, missingHeader } from "./structure";
+import {
+  columnCount,
+  duplicateHeader,
+  emptyHeaderCell,
+  missingHeader,
+  unclosedQuote,
+} from "./structure";
 
 const run = (check: typeof missingHeader, text: string) => check(parseCsv(text));
 const kinds = (check: typeof missingHeader, text: string) => run(check, text).map((f) => f.kind);
@@ -69,6 +75,24 @@ describe("duplicateHeader", () => {
 
   it("accepts distinct names", () => {
     expect(run(duplicateHeader, "Id,Name,Account.Name\n")).toEqual([]);
+  });
+});
+
+describe("unclosedQuote", () => {
+  it("flags the row where a quote opens and never closes", () => {
+    expect(run(unclosedQuote, 'Id,Note\n1,ok\n2,"open\n3,lost\n')).toMatchObject([
+      { kind: "unclosed-quote", severity: "error", location: { row: 2 } },
+    ]);
+  });
+
+  it("says so when the quote opens in the header", () => {
+    expect(run(unclosedQuote, 'Id,"Note\n1,2\n')).toMatchObject([
+      { detail: "The quote opens in the header row" },
+    ]);
+  });
+
+  it("accepts closed quotes", () => {
+    expect(run(unclosedQuote, 'Id,Note\n1,"a ""b"" c"\n')).toEqual([]);
   });
 });
 

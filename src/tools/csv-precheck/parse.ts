@@ -12,21 +12,29 @@ export interface ParsedCsv {
   delimiter: Delimiter;
   header: string[] | null;
   rows: DataRow[];
+  // The file ended inside a quoted field, so its last record holds everything after the quote.
+  unclosedQuote: boolean;
 }
 
 export function parseCsv(text: string): ParsedCsv {
   const delimiter = detectDelimiter(text);
-  const [header, ...rest] = parseRecords(text, delimiter);
+  const { records, unclosedQuote } = scanRecords(text, delimiter);
+  const [header, ...rest] = records;
   return {
     delimiter,
     header: header ?? null,
     rows: rest.map((fields, i) => ({ number: i + 1, fields })),
+    unclosedQuote,
   };
 }
 
 // RFC 4180 records: quoted fields may hold the delimiter, line breaks and "" for a quote.
 // A quote inside an unquoted field, or text after a closing quote, is kept as written.
-export function parseRecords(text: string, delimiter: string, limit = Infinity): string[][] {
+export function parseRecords(text: string, delimiter: string, maxRecords = Infinity): string[][] {
+  return scanRecords(text, delimiter, maxRecords).records;
+}
+
+function scanRecords(text: string, delimiter: string, maxRecords = Infinity) {
   const records: string[][] = [];
   let record: string[] = [];
   let field = "";
@@ -40,7 +48,7 @@ export function parseRecords(text: string, delimiter: string, limit = Infinity):
     field = "";
   };
 
-  while (i < text.length && records.length < limit) {
+  while (i < text.length && records.length < maxRecords) {
     const ch = text[i];
     if (quoted) {
       if (ch === '"') {
@@ -73,9 +81,10 @@ export function parseRecords(text: string, delimiter: string, limit = Infinity):
     }
   }
 
+  if (records.length >= maxRecords) return { records, unclosedQuote: false };
   // A file without a final newline still ends its last record.
-  if (records.length < limit && (field !== "" || record.length > 0 || quoted)) endRecord();
-  return records;
+  if (field !== "" || record.length > 0 || quoted) endRecord();
+  return { records, unclosedQuote: quoted };
 }
 
 const SAMPLE_RECORDS = 20;
@@ -84,15 +93,16 @@ const SAMPLE_RECORDS = 20;
 // sample rows the same width as the header. Comma wins ties, as Data Loader's default.
 export function detectDelimiter(text: string): Delimiter {
   let best: Delimiter = ",";
-  let bestScore = [0, 0];
+  let bestMatching = 0;
+  let bestWidth = 0;
   for (const delimiter of DELIMITERS) {
     const [header, ...rows] = parseRecords(text, delimiter, SAMPLE_RECORDS);
     if (!header || header.length < 2) continue;
     const matching = rows.filter((r) => r.length === header.length).length;
-    const score = [matching, header.length];
-    if (score[0] > bestScore[0] || (score[0] === bestScore[0] && score[1] > bestScore[1])) {
+    if (matching > bestMatching || (matching === bestMatching && header.length > bestWidth)) {
       best = delimiter;
-      bestScore = score;
+      bestMatching = matching;
+      bestWidth = header.length;
     }
   }
   return best;

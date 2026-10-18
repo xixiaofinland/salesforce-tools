@@ -104,11 +104,23 @@ describe("parseCsv", () => {
         { number: 1, fields: ["1", "Acme"] },
         { number: 2, fields: ["2", "Beta"] },
       ],
+      unclosedQuote: false,
     });
   });
 
   it("has no header for an empty file", () => {
-    expect(parseCsv("")).toEqual({ delimiter: ",", header: null, rows: [] });
+    expect(parseCsv("")).toEqual({
+      delimiter: ",",
+      header: null,
+      rows: [],
+      unclosedQuote: false,
+    });
+  });
+
+  it("notes a quote left open at the end of the file", () => {
+    const csv = parseCsv('a,b\n1,"open\n2,x\n');
+    expect(csv.unclosedQuote).toBe(true);
+    expect(csv.rows).toEqual([{ number: 1, fields: ["1", "open\n2,x\n"] }]);
   });
 
   it("uses the detected delimiter", () => {

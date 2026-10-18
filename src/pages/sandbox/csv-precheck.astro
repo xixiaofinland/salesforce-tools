@@ -69,8 +69,14 @@ import SandboxLayout from "../../shared/SandboxLayout.astro";
     return section;
   }
 
+  let latest: File | undefined;
+
   async function open(file: File) {
-    const report = checkCsv(await file.text());
+    latest = file;
+    const text = await file.text();
+    // A file opened while an earlier one was still reading wins, whichever finishes first.
+    if (file !== latest) return;
+    const report = checkCsv(text);
     reportText = renderText(file.name, report);
     fileName.textContent = file.name;
     summary.textContent = summaryLine(report);

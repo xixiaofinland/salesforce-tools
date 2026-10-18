@@ -74,6 +74,25 @@ export const duplicateHeader: Check = (csv) => {
     }));
 };
 
+// Without this, everything after a stray opening quote reads as one value and the
+// report could claim a broken file is clean.
+export const unclosedQuote: Check = (csv) => {
+  if (!csv.unclosedQuote) return [];
+  const last = csv.rows.at(-1);
+  return [
+    {
+      kind: "unclosed-quote",
+      severity: "error",
+      title: "A quoted value is never closed",
+      explanation:
+        'A value starts with a double quote that has no closing quote, so everything after it, to the end of the file, reads as part of that one value. Data Loader cannot read the rows after it as records. Close the quote, or double it ("") if it belongs in the value.',
+      ...(last
+        ? { location: { row: last.number } }
+        : { detail: "The quote opens in the header row" }),
+    },
+  ];
+};
+
 export const columnCount: Check = (csv) => {
   if (!hasHeader(csv)) return [];
   const expected = csv.header.length;
