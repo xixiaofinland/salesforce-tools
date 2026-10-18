@@ -207,6 +207,44 @@ Limits. Configure Data Loader:
 
 Bulk-only null token: "Insert null values ... isn't available if either the Use Bulk API or the Use Bulk Api 2.0 option is selected ... use a field value of #N/A in the import CSV file."
 
+## 6. How Data Loader reads the CSV (source)
+
+Read 2026-10-18 from the `master` branch of `forcedotcom/dataloader` and of `forcedotcom/wsc`, whose `com.sforce.async.CSVReader` Data Loader uses to parse the file. Quotes are verbatim from the source.
+
+Reader setup, `CSVFileReader.java` https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/dao/csv/CSVFileReader.java
+
+- `csvReader = new CSVReader(bomInputStream, encoding, csvDelimiters);` (or the plain `FileInputStream` when the encoding is not UTF-8/16/32). No setter for blank-line handling is called.
+- Header: `daoColsList = csvReader.nextRecord();` and, when that is `null`, `throw new DataAccessObjectInitializationException(Messages.getString("CSVFileDAO.errorHeaderRow"))`, i.e. `Error getting header row from the CSV file.`
+- Each data row: `if (!DAORowUtil.isValidRow(record)) { endOfFileReached = true; return null; }`, then `if (record.size() > getColumnNames().size())` throws `CSVFileDAO.errorRowTooLarge` and `else if (record.size() < getColumnNames().size())` throws `CSVFileDAO.errorRowTooSmall`, both with `String.valueOf(getCurrentRowNumber()), String.valueOf(record.size()), String.valueOf(getColumnNames().size())`, as a `DataAccessRowException`.
+
+Blank lines, quotes, `CSVReader.java` https://github.com/forcedotcom/wsc/blob/HEAD/src/main/java/com/sforce/async/CSVReader.java
+
+- `private boolean ignoreBlankRecords = true;` with no setter. In `nextRecord()`, while `ignoreBlankRecords`, a record of size 0, or of size 1 whose value is `null` or empty, is skipped: `if (emptyLine) { record = nextRecordLocal(); }`. So blank lines anywhere, including before the header, are skipped. An empty field is stored as `null` (`record.add(fieldValue == null ? null : fieldValue.toString())`). A line of spaces is a one-field record, not blank (spaces are word characters: `parser.wordChars(0, 255)`).
+- Unclosed quote: `throw new CSVParseException("EOF reached before closing an opened quote", parser.lineno());`
+- Other quote errors (not yet checked by the tool): `"Found unescaped quote. A value with quote should be within a quote"`, `"Not expecting more text after end quote"`.
+
+Row numbers, `AbstractDataReaderImpl.java` https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/dao/AbstractDataReaderImpl.java
+
+- `open()` reads the header, then sets `currentRowNumber = 0;`.
+- `readTableRow()`: `trow = readTableRowFromDAO(); if (trow == null) { ... return null; } currentRowNumber++;`. The number is incremented only after a row is read, so `getCurrentRowNumber()` inside the row-size error is the count of data rows read before it: the first data row is reported as `data row #0`. Skipped blank lines are not counted.
+
+What a row-size error does
+
+- `readTableRowListFromDAO` (CSVFileReader) and `readTableRowList` (AbstractDataReaderImpl) do not catch it, nor does `AbstractLoadAction.visit()` (https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/action/AbstractLoadAction.java), which calls `getDao().readTableRowList(loadBatchSize)`. `AbstractAction.executeOperation` (https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/action/AbstractAction.java) collects exceptions and ends with `getMonitor().doneError(errMsg)`. So the operation stops at the first such row.
+
+Header checks, `DAORowUtil.validateColumns` https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/util/DAORowUtil.java
+
+- `if (header == null || header.length() == 0) { error = Messages.getString("RowUtil.warningEmptyColumn"); break; } else if (uniqueHeaders.contains(header)) { error = Messages.getFormattedString("RowUtil.warningDuplicateColumn", header); break; }` with a plain `HashSet`: duplicates are compared exactly (case-sensitive), and only the first problem is reported.
+- `messages.properties`: `RowUtil.warningDuplicateColumn=A duplicate column [{0}] is found`.
+- Caller, `DataSelectionDialog.java` https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/ui/DataSelectionDialog.java: `int response = UIUtils.errorMessageBox(shell, error); if(response != SWT.YES) { handleCSVReadError(shell, Labels.getString("DataSelectionDialog.errorCSVFormat") + ...); return; }`. `labels.properties`: `DataSelectionDialog.errorCSVFormat=CSV Error: Invalid CSV file format.\n\n`.
+
+Column-to-field mapping, `Mapper.java` https://github.com/forcedotcom/dataloader/blob/HEAD/src/main/java/com/salesforce/dataloader/mapping/Mapper.java
+
+- `protected final Map<String, String> daoColumnNames = new LinkedCaseInsensitiveMap<String>();` filled with `daoColumnNames.put(colName, colName);`: column names that differ only in case share one entry.
+- `if (colName == null) { String errorMsg = "Missing column name in the CSV file at column " + i; ... throw new MappingInitializationException(errorMsg); }`
+
+UNVERIFIED: what Data Loader does with the data of an empty or duplicate column when the user chooses to continue past the warning; which Data Loader releases match `master`.
+
 ## Implications for the tool
 
 1. Date/datetime check: accept the doc list in section 1 as "valid"; also flag `+HH:mm` offsets with a colon as "rejected by Data Loader per KB 000383025" (recommend `+HHmm` or `GMT+HH:mm`). Offer a relaxed mode, since current source seems to accept more.
