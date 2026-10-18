@@ -1,0 +1,40 @@
+---
+import Layout from "../shared/Layout.astro";
+import { tools } from "../tools/registry";
+---
+
+<Layout
+  title="Free Salesforce Tools That Run in Your Browser"
+  description="Free tools for Salesforce admins and developers. Your files are opened in your browser and never leave your computer."
+>
+  <h1>Salesforce Tools</h1>
+  <p>
+    Free tools for Salesforce admins and developers. Files are opened in your browser, never
+    uploaded.
+  </p>
+  <ul class="tools">
+    {tools.map((tool) => (
+      <li>
+        <a href={`/${tool.slug}/`}>{tool.name}</a>
+        <p>{tool.description}</p>
+      </li>
+    ))}
+  </ul>
+</Layout>
+
+<style>
+  .tools {
+    list-style: none;
+    padding: 0;
+  }
+  .tools li {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .tools p {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+  }
+</style>

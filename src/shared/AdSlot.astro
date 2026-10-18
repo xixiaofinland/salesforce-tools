@@ -1,0 +1,9 @@
+---
+// Ads live only on hosting pages, never inside the sandbox. Empty until AdSense is approved.
+interface Props {
+  name: string;
+}
+const { name } = Astro.props;
+---
+
+<aside class="ad-slot" data-ad-slot={name} aria-hidden="true"></aside>

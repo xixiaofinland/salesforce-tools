@@ -1,0 +1,27 @@
+---
+import { SANDBOX_IFRAME_FLAGS, SANDBOX_PATH_PREFIX } from "./sandbox/csp";
+
+interface Props {
+  tool: string;
+  title: string;
+}
+const { tool, title } = Astro.props;
+---
+
+<iframe
+  class="sandbox-frame"
+  src={`${SANDBOX_PATH_PREFIX}${tool}/`}
+  sandbox={SANDBOX_IFRAME_FLAGS}
+  referrerpolicy="no-referrer"
+  title={title}
+></iframe>
+
+<style>
+  .sandbox-frame {
+    width: 100%;
+    min-height: 28rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+</style>

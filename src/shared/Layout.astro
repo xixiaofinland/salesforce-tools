@@ -1,0 +1,55 @@
+---
+import Analytics from "./Analytics.astro";
+import "./global.css";
+
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <Analytics />
+  </head>
+  <body>
+    <header>
+      <a href="/">Salesforce Tools</a>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer>
+      <p>
+        Free, open source:
+        <a href="https://github.com/xixiaofinland/salesforce-tools">source on GitHub</a>.
+      </p>
+    </footer>
+  </body>
+</html>
+
+<style>
+  header,
+  main,
+  footer {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  header a {
+    font-weight: 600;
+    text-decoration: none;
+  }
+  footer {
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+</style>
