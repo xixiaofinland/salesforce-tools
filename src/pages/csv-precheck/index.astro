@@ -26,92 +26,35 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
   <section class="content">
     <h2>What it checks</h2>
     <p>
-      The checks follow how Data Loader's own CSV reader handles a file, taken from its open-source
-      code and Salesforce's help articles.
+      The same rules Data Loader's own CSV reader applies. Each finding in the report explains
+      itself.
     </p>
     <ul>
       <li>
-        <strong>Encoding.</strong> The file must be UTF-8. It flags bytes in another encoding, which
-        can garble accented letters, and a byte order mark at the start, which a Salesforce help
-        article says Data Loader rejects; whether current versions still do is unconfirmed.
+        <strong>File:</strong> UTF-8 encoding, delimiter, size against Bulk API limits.
       </li>
       <li>
-        <strong>Delimiter.</strong> It works out whether the file uses commas, semicolons or tabs.
-        Data Loader reads a semicolon or tab file only if you choose that delimiter in its settings,
-        and the Bulk API accepts nothing but commas.
+        <strong>Header:</strong> missing, empty or duplicate column names.
       </li>
       <li>
-        <strong>Header row.</strong> Data Loader skips blank lines and reads the first remaining
-        line as the field names. A file with no such line cannot be loaded.
+        <strong>Rows:</strong> unclosed quotes, wrong column counts, stray spaces, duplicate rows.
       </li>
       <li>
-        <strong>Empty header cells</strong>, including the ones a stray delimiter at the end of the
-        header line creates.
+        <strong>IDs:</strong> 15 or 18 characters, valid checksum, missing record IDs.
       </li>
       <li>
-        <strong>Duplicate column names.</strong> Data Loader warns when two names match exactly. Its
-        field mapping also ignores case, so <code>Name</code> and <code>name</code> share one entry
-        and cannot be mapped to fields separately.
+        <strong>Dates:</strong> formats Data Loader accepts, day/month order, impossible dates.
       </li>
       <li>
-        <strong>Unclosed quotes.</strong> A value that opens a double quote and never closes it
-        swallows the rest of the file.
-      </li>
-      <li>
-        <strong>Column counts.</strong> Every row must have exactly as many columns as the header. A
-        value holding the delimiter or a line break without double quotes around it is a common
-        cause.
-      </li>
-      <li>
-        <strong>Salesforce IDs.</strong> It finds the ID columns by name, such as
-        <code>Id</code> or <code>AccountId</code>, or because most of their values look like IDs. An
-        ID must be 15 or 18 letters and digits; it also flags 18-character IDs whose last three
-        characters do not match the first 15, columns mixing both lengths, 15-character IDs that
-        differ only in letter case, and empty values in an <code>Id</code> column. One click
-        converts every 15-character ID to 18 characters, which do not depend on letter case.
-      </li>
-      <li>
-        <strong>Dates.</strong> It finds the date columns by their values and checks each value
-        against the formats Data Loader accepts, such as <code>yyyy-MM-dd</code> and
-        <code>yyyy-MM-ddTHH:mm:ss.SSS+0000</code>, rejecting days that do not exist, such as
-        <code>2024-02-30</code>, and dates outside 1700 to 4000. Tick
-        <strong>Use European date format</strong> to match the same setting in Data Loader: slash
-        dates are then read as <code>dd/MM/yyyy</code> instead of <code>MM/dd/yyyy</code>. A value
-        such as <code>13/02/2024</code> shows which order a column uses, so it flags a column in the
-        other order from the setting, and warns when every value reads either way. It also warns
-        about offsets written with a colon, such as <code>+01:00</code>, and about times in date
-        columns, which can shift a date by a day.
-      </li>
-      <li>
-        <strong>Spaces.</strong> Data Loader does not trim values, so it lists the columns with
-        values that start or end with a space, and any space next to a double quote, as in
-        <code>"John", "Smith"</code>, which the Bulk API rejects. It never changes a value itself.
-      </li>
-      <li>
-        <strong>Multi-line values.</strong> It notes the columns where values hold line breaks.
-      </li>
-      <li>
-        <strong>Repeated rows.</strong> Rows identical in every column, which would load as
-        duplicate records.
-      </li>
-      <li>
-        <strong>Repeated key values.</strong> Pick a key column, such as the external ID you upsert
-        on, to list the values that appear in more than one row. Values are compared exactly, or
-        optionally ignoring letter case and surrounding spaces; empty values are never counted.
-      </li>
-      <li>
-        <strong>Size.</strong> The Bulk API takes at most 10,000 records and 10 MB in one batch. A
-        file over either limit gets a note, and you can split it into files of as many rows as you
-        choose, each with the header row, downloaded together as a zip.
+        <strong>Keys:</strong> values repeated in a column you pick, such as an external ID.
       </li>
     </ul>
+    <p>
+      It can also convert 15-character IDs to 18, and split a large file into smaller ones as a zip.
+    </p>
 
     <h2>Data Loader errors it helps prevent</h2>
-    <p>
-      These are Data Loader's messages for the problems above, word for word. The empty and
-      duplicate column warnings appear as you choose the file and ask whether to continue; the
-      others stop the load.
-    </p>
+    <p>Data Loader's own messages for the problems above.</p>
     <ul class="errors">
       <li>
         <code>
@@ -157,31 +100,27 @@ const source = "https://github.com/xixiaofinland/salesforce-tools/blob/main";
       </li>
     </ul>
     <p>
-      A row with the wrong number of columns stops the whole operation, so no row after it loads.
-      The report lists every such row at once, instead of one per failed run.
+      A row with the wrong column count stops the whole load; the report lists every such row at
+      once.
     </p>
 
     <h2>FAQ</h2>
     <h3>Is my file uploaded?</h3>
     <p>
-      No. The file is opened in your browser and read there. The tool runs in a sandboxed frame
-      whose content security policy blocks every network request, so it has no way to send your data
-      anywhere. To verify it yourself: load this page, disconnect from the internet, then open your
-      file. The check still works. The code is open source: see the
+      No. It is read in your browser, in a sandboxed frame that blocks every network request. Try it
+      offline: it still works. The code is open source: see the
       <a href={`${source}/src/pages/sandbox/csv-precheck.astro`}>tool's page</a> and its
       <a href={`${source}/src/shared/sandbox/csp.ts`}>security policy</a> on GitHub.
     </p>
     <h3>Does it change my file?</h3>
     <p>
-      No. It only reads the file. You can download the report as a text file, split the file into
-      new, smaller files, or download a copy with 18-character IDs; the CSV itself is left as it is.
-      Split files keep every row exactly as written, in its original order, and the converted copy
-      differs only in the IDs.
+      No. Splitting and ID conversion give you new files; the converted copy differs only in its
+      IDs.
     </p>
     <h3>Why is Data Loader's row number one less than the report's?</h3>
     <p>
-      Data Loader counts data rows from 0 and leaves out blank lines, so the first row under the
-      header is its row #0. The report counts from 1 and also gives the line in the file.
+      Data Loader counts from 0 and skips blank lines. The report counts from 1 and also gives the
+      file's line number.
     </p>
   </section>
 </Layout>
