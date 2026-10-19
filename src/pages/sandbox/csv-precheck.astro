@@ -8,6 +8,11 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     <input type="file" id="file" accept=".csv,.tsv,.txt,text/csv" />
     <span>Open a CSV file, or drop it here</span>
   </label>
+  <div class="progress" id="progress" role="status" hidden>
+    <progress id="progress-bar" max="1" value="0"></progress>
+    <span id="progress-text"></span>
+  </div>
+  <p class="failure" id="failure" role="alert" hidden></p>
   <section id="result" aria-live="polite" hidden>
     <h2 id="file-name"></h2>
     <p id="summary"></p>
@@ -67,25 +72,27 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
 </SandboxLayout>
 
 <script>
-  import { createZip, MAX_ZIP_FILES } from "../../shared/zip";
-  import { convertedName, convertIds } from "../../tools/csv-precheck/convert";
+  import { MAX_ZIP_FILES } from "../../shared/zip";
+  import { convertedName } from "../../tools/csv-precheck/convert";
   import { formatLocation, type FindingGroup } from "../../tools/csv-precheck/findings";
-  import { convertibleIds, idColumns } from "../../tools/csv-precheck/ids";
   import {
-    buildReport,
     dateLine,
     idLine,
     keyLine,
     plural,
-    prepareFile,
     renderText,
     summaryLine,
-    type PreparedCsv,
   } from "../../tools/csv-precheck/report";
-  import { baseName, partName, splitCsv } from "../../tools/csv-precheck/split";
+  import { baseName, partName } from "../../tools/csv-precheck/split";
+  import type { Handlers, Reply, Request } from "../../tools/csv-precheck/worker";
+  import CheckWorker from "../../tools/csv-precheck/worker?worker&inline";
 
   const input = document.querySelector<HTMLInputElement>("#file")!;
   const drop = document.querySelector<HTMLLabelElement>("#drop")!;
+  const progress = document.querySelector<HTMLElement>("#progress")!;
+  const progressBar = document.querySelector<HTMLProgressElement>("#progress-bar")!;
+  const progressText = document.querySelector<HTMLElement>("#progress-text")!;
+  const failure = document.querySelector<HTMLElement>("#failure")!;
   const result = document.querySelector<HTMLElement>("#result")!;
   const fileName = document.querySelector<HTMLElement>("#file-name")!;
   const summary = document.querySelector<HTMLElement>("#summary")!;
@@ -109,7 +116,60 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   const splitDownload = document.querySelector<HTMLButtonElement>("#split-download")!;
   let reportText = "";
 
+  // ── Worker
+  // The file is parsed and checked in a worker, so the page stays responsive and can show
+  // progress. Vite starts it from a blob: URL, which the CSP allows; its data: URL fallback
+  // stays blocked, and a worker that cannot start ends up in fail().
+  const worker = new CheckWorker();
+  let nextId = 0;
+  // Set once the worker has failed to start or has crashed; every later call fails with it.
+  let stopped: Error | undefined;
+  const pending = new Map<
+    number,
+    { resolve(v: unknown): void; reject(e: Error): void; onProgress?(f: number): void }
+  >();
+
+  function call<K extends keyof Handlers>(
+    type: K,
+    args: Parameters<Handlers[K]>[0],
+    { transfer = [], onProgress }: { transfer?: Transferable[]; onProgress?(f: number): void } = {},
+  ): Promise<ReturnType<Handlers[K]>> {
+    if (stopped) return Promise.reject(stopped);
+    const id = nextId++;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress });
+      worker.postMessage({ id, type, args } as Request, transfer);
+    });
+  }
+
+  worker.addEventListener("message", ({ data }: MessageEvent<Reply>) => {
+    const request = pending.get(data.id);
+    if (!request) return;
+    if ("progress" in data) return request.onProgress?.(data.progress);
+    pending.delete(data.id);
+    if ("error" in data) request.reject(new Error(data.error));
+    else request.resolve(data.result);
+  });
+
+  function fail(message: string) {
+    progress.hidden = true;
+    result.hidden = true;
+    failure.textContent = message;
+    failure.hidden = false;
+  }
+
+  worker.addEventListener("error", (e) => {
+    e.preventDefault();
+    stopped = new Error("This browser could not run the checker, so the file was not checked.");
+    for (const request of pending.values()) request.reject(stopped);
+    pending.clear();
+    if (latest) fail(stopped.message);
+  });
+
+  // ── Report
   const SEVERITY_LABELS = { error: "Error", warning: "Warning", info: "Info" };
+  // Locations shown per "Show more", after the first few.
+  const MORE_PAGE = 50;
 
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = "") {
     const node = document.createElement(tag);
@@ -118,8 +178,18 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     return node;
   }
 
-  // Built with textContent only: file contents end up in titles and details.
-  function renderGroup(group: FindingGroup): HTMLElement {
+  function exampleItem(example: FindingGroup["examples"][number]): HTMLElement | undefined {
+    if (!example.location && !example.detail) return undefined;
+    const item = el("li", "example");
+    if (example.location) item.append(el("strong", "where", formatLocation(example.location)));
+    if (example.location && example.detail) item.append(": ");
+    if (example.detail) item.append(el("code", "detail", example.detail));
+    return item;
+  }
+
+  // Built with textContent only: file contents end up in titles and details. A large group
+  // lists its first locations and fetches the rest from the worker a page at a time.
+  function renderGroup(group: FindingGroup, reportId: number): HTMLElement {
     const section = el("section", `finding ${group.severity}`);
     section.dataset.kind = group.kind;
     const heading = el("h3", "finding-title");
@@ -130,24 +200,48 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     );
     section.append(heading, el("p", "explanation", group.explanation));
     const list = el("ul", "examples");
-    for (const example of group.examples) {
-      if (!example.location && !example.detail) continue;
-      const item = el("li", "example");
-      if (example.location) item.append(el("strong", "where", formatLocation(example.location)));
-      if (example.location && example.detail) item.append(": ");
-      if (example.detail) item.append(el("code", "detail", example.detail));
-      list.append(item);
-    }
-    if (list.childElementCount > 0) section.append(list);
-    const more = group.count - group.examples.length;
-    if (more > 0) section.append(el("p", "more", `and ${more.toLocaleString("en-US")} more`));
+    const add = (examples: FindingGroup["examples"]) => {
+      for (const example of examples) {
+        const item = exampleItem(example);
+        if (item) list.append(item);
+      }
+    };
+    add(group.examples);
+    section.append(list);
+    list.hidden = list.childElementCount === 0;
+
+    let shown = group.examples.length;
+    const more = el("p", "more");
+    const left = el("span", "more-count");
+    const button = el("button", "show-more");
+    button.type = "button";
+    const update = () => {
+      const rest = group.count - shown;
+      more.hidden = rest <= 0;
+      left.textContent = `and ${rest.toLocaleString("en-US")} more`;
+      button.textContent = `Show ${Math.min(rest, MORE_PAGE).toLocaleString("en-US")} more`;
+    };
+    more.append(left, " ", button);
+    button.addEventListener("click", () =>
+      run(async () => {
+        button.disabled = true;
+        const examples = await call("more", { kind: group.kind, from: shown, count: MORE_PAGE });
+        if (reportId !== latestReport) return;
+        add(examples);
+        list.hidden = list.childElementCount === 0;
+        shown += examples.length;
+        button.disabled = false;
+        update();
+      }),
+    );
+    update();
+    section.append(more);
     return section;
   }
 
   let latest: File | undefined;
-  let prepared: PreparedCsv | undefined;
-  // The file's own bytes, which the split copies so its encoding and line endings survive.
-  let bytes: Uint8Array | undefined;
+  let latestReport = -1;
+  let rowCount = 0;
 
   // The rows per file the user entered, or undefined when it is not a usable number.
   function rowsPerFile(): number | undefined {
@@ -156,7 +250,6 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   }
 
   function showSplit() {
-    const rowCount = prepared?.csv.rows.length ?? 0;
     split.hidden = rowCount === 0;
     if (!latest || rowCount === 0) return;
     const n = rowsPerFile();
@@ -177,8 +270,7 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   }
 
   // The conversion is offered only when it would change something.
-  function showConvert() {
-    const count = prepared ? convertibleIds(prepared.csv, idColumns(prepared.csv)) : 0;
+  function showConvert(count: number) {
     convert.hidden = count === 0;
     convertPlan.textContent = `${plural(count, "ID")} of 15 characters to convert.`;
   }
@@ -196,17 +288,22 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     keyPicker.hidden = options.length === 0;
   }
 
-  // Runs on opening a file and on every key or date setting change; the file is parsed and
-  // the other checks run only once, in prepareCsv.
-  function show() {
-    if (!latest || !prepared) return;
+  // Runs on opening a file and on every key or date setting change; the worker parsed the
+  // file and ran the other checks once, on opening it.
+  async function show() {
+    const file = latest;
+    if (!file) return;
     const key =
       keyColumn.value === ""
         ? undefined
         : { column: Number(keyColumn.value), ignoreCaseAndSpaces: keyLoose.checked };
-    const report = buildReport(prepared, key, { european: european.checked });
-    reportText = renderText(latest.name, report);
-    fileName.textContent = latest.name;
+    const reportId = ++latestReport;
+    const report = await call("report", { key, european: european.checked });
+    // A newer file or setting wins, whichever reply comes first.
+    if (file !== latest || reportId !== latestReport) return;
+    reportText = renderText(file.name, report);
+    rowCount = report.rowCount;
+    fileName.textContent = file.name;
     summary.textContent = summaryLine(report);
     keyText.textContent = keyLine(report);
     keyText.hidden = !report.key;
@@ -215,36 +312,62 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
     dateText.textContent = dateLine(report);
     dateSetting.hidden = report.dateColumns.length === 0;
     clean.hidden = report.groups.length > 0;
-    findings.replaceChildren(...report.groups.map(renderGroup));
-    showConvert();
+    findings.replaceChildren(...report.groups.map((g) => renderGroup(g, reportId)));
     showSplit();
+    progress.hidden = true;
     result.hidden = false;
+  }
+
+  function showProgress(file: File, fraction: number) {
+    if (file !== latest) return;
+    progressBar.value = fraction;
+    progressText.textContent =
+      fraction < 1
+        ? `Reading ${file.name}: ${Math.floor(fraction * 100)}%`
+        : `Checking ${file.name}`;
   }
 
   async function open(file: File) {
     latest = file;
-    const contents = new Uint8Array(await file.arrayBuffer());
+    result.hidden = true;
+    failure.hidden = true;
+    progress.hidden = false;
+    showProgress(file, 0);
+    const contents = await file.arrayBuffer();
     // A file opened while an earlier one was still reading wins, whichever finishes first.
     if (file !== latest) return;
-    bytes = contents;
-    prepared = prepareFile(contents);
-    fillKeyColumns(prepared.csv.header);
-    show();
+    const { header, convertible } = await call("open", contents, {
+      transfer: [contents],
+      onProgress: (fraction) => showProgress(file, fraction),
+    });
+    if (file !== latest) return;
+    fillKeyColumns(header);
+    showConvert(convertible);
+    await show();
   }
 
-  keyColumn.addEventListener("change", show);
-  keyLoose.addEventListener("change", show);
-  european.addEventListener("change", show);
+  // Errors from the worker end up on the page rather than in the console only.
+  function run(task: () => Promise<void>) {
+    task().catch((e: unknown) => {
+      const message = e instanceof Error ? e.message : String(e);
+      fail(e === stopped ? message : `The file could not be checked: ${message}`);
+    });
+  }
+
+  keyColumn.addEventListener("change", () => run(show));
+  keyLoose.addEventListener("change", () => run(show));
+  european.addEventListener("change", () => run(show));
   splitRows.addEventListener("input", showSplit);
 
   input.addEventListener("change", () => {
-    if (input.files?.[0]) void open(input.files[0]);
+    const file = input.files?.[0];
+    if (file) run(() => open(file));
   });
   drop.addEventListener("dragover", (e) => e.preventDefault());
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     const file = e.dataTransfer?.files[0];
-    if (file) void open(file);
+    if (file) run(() => open(file));
   });
   function save(blob: Blob, name: string) {
     const url = URL.createObjectURL(blob);
@@ -258,21 +381,25 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   download.addEventListener("click", () => {
     save(new Blob([reportText], { type: "text/plain" }), "csv-precheck-report.txt");
   });
-  convertDownload.addEventListener("click", () => {
-    if (!latest || !prepared || !bytes) return;
-    const converted = convertIds(bytes, prepared.csv.delimiter, idColumns(prepared.csv));
-    save(new Blob([converted], { type: "text/csv" }), convertedName(latest.name));
-  });
-  splitDownload.addEventListener("click", () => {
-    const n = rowsPerFile();
-    if (!latest || !prepared || !bytes || n === undefined) return;
-    const name = latest.name;
-    const parts = splitCsv(bytes, prepared.csv.delimiter, n);
-    const zip = createZip(
-      parts.map((data, i) => ({ name: partName(name, i, parts.length), data })),
-    );
-    save(new Blob([zip], { type: "application/zip" }), `${baseName(name)}-parts.zip`);
-  });
+  convertDownload.addEventListener("click", () =>
+    run(async () => {
+      const file = latest;
+      if (!file) return;
+      const converted = await call("convert", undefined);
+      if (file !== latest) return;
+      save(new Blob([converted], { type: "text/csv" }), convertedName(file.name));
+    }),
+  );
+  splitDownload.addEventListener("click", () =>
+    run(async () => {
+      const file = latest;
+      const n = rowsPerFile();
+      if (!file || n === undefined) return;
+      const zip = await call("split", { name: file.name, rowsPerFile: n });
+      if (file !== latest) return;
+      save(new Blob([zip], { type: "application/zip" }), `${baseName(file.name)}-parts.zip`);
+    }),
+  );
 </script>
 
 <style>
@@ -372,6 +499,22 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   .info .severity {
     color: var(--accent);
   }
+  .progress {
+    margin: 1rem;
+  }
+  .progress[hidden] {
+    display: none;
+  }
+  .progress progress {
+    display: block;
+    width: 100%;
+    margin: 0 0 0.25rem;
+  }
+  .failure {
+    border-left: 4px solid #cf222e;
+    padding: 0.5rem 0.75rem;
+    margin: 1rem;
+  }
   .count,
   .more {
     color: var(--muted);
@@ -388,6 +531,12 @@ import { BATCH_ROWS } from "../../tools/csv-precheck/checks/size";
   }
   .more {
     margin: 0.25rem 0;
+  }
+  .more[hidden] {
+    display: none;
+  }
+  .show-more {
+    margin-left: 0.25rem;
   }
   #download {
     display: block;

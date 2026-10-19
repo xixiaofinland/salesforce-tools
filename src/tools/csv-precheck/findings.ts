@@ -38,7 +38,10 @@ export const EXAMPLES_PER_GROUP = 5;
 
 const SEVERITY_ORDER: Severity[] = ["error", "warning", "info"];
 
-export function groupFindings(findings: Finding[]): FindingGroup[] {
+export function groupFindings(
+  findings: Finding[],
+  examplesPerGroup = EXAMPLES_PER_GROUP,
+): FindingGroup[] {
   const groups = new Map<string, FindingGroup>();
   for (const f of findings) {
     let group = groups.get(f.kind);
@@ -48,7 +51,7 @@ export function groupFindings(findings: Finding[]): FindingGroup[] {
       groups.set(f.kind, group);
     }
     group.count++;
-    if (group.examples.length < EXAMPLES_PER_GROUP) {
+    if (group.examples.length < examplesPerGroup) {
       group.examples.push({ detail: f.detail, location: f.location });
     }
   }

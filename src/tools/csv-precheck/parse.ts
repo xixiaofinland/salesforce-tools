@@ -62,9 +62,12 @@ export interface RecordSpan {
 // A blank line, or one holding only "", reads as a single empty field.
 const isBlank = (fields: string[]) => fields.length === 1 && fields[0] === "";
 
-export function parseCsv(text: string): ParsedCsv {
+// Told now and then how many characters of the text have been read, out of how many.
+export type Progress = (done: number, total: number) => void;
+
+export function parseCsv(text: string, onProgress?: Progress): ParsedCsv {
   const delimiter = detectDelimiter(text);
-  const { records, unclosedQuote } = scanRecords(text, delimiter);
+  const { records, unclosedQuote } = scanRecords(text, delimiter, Infinity, false, onProgress);
   const [header, ...rest] = records.filter((r) => !isBlank(r.fields));
   const spaced = (r: CsvRecord, row?: number) =>
     r.spacedQuotes.map((column) => ({ ...(row ? { row } : {}), line: r.line, column }));
@@ -106,7 +109,15 @@ export function parseRecords(text: string, delimiter: string, maxRecords = Infin
   return scanRecords(text, delimiter, maxRecords).records.map((r) => r.fields);
 }
 
-function scanRecords(text: string, delimiter: string, maxRecords = Infinity, withStarts = false) {
+const PROGRESS_STEP = 1 << 20;
+
+function scanRecords(
+  text: string,
+  delimiter: string,
+  maxRecords = Infinity,
+  withStarts = false,
+  onProgress?: Progress,
+) {
   const records: CsvRecord[] = [];
   let record: string[] = [];
   let spacedQuotes: number[] = [];
@@ -120,6 +131,7 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity, wit
   let recordLine = 1;
   let recordStart = 0;
   let i = 0;
+  let nextProgress = onProgress ? PROGRESS_STEP : Infinity;
 
   const endField = () => {
     record.push(field);
@@ -146,6 +158,10 @@ function scanRecords(text: string, delimiter: string, maxRecords = Infinity, wit
   };
 
   while (i < text.length && records.length < maxRecords) {
+    if (i >= nextProgress) {
+      onProgress!(i, text.length);
+      nextProgress = i + PROGRESS_STEP;
+    }
     const ch = text[i];
     if (quoted) {
       if (ch === '"') {
