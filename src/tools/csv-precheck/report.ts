@@ -4,6 +4,7 @@ import { comparisonMode, duplicateKeys, type KeyColumn } from "./checks/duplicat
 import { encodingChecks } from "./checks/encoding";
 import { batchLimit } from "./checks/size";
 import {
+  EXAMPLES_PER_GROUP,
   formatLocation,
   groupFindings,
   type Check,
@@ -12,7 +13,7 @@ import {
 } from "./findings";
 import { dateColumns, type DateSettings } from "./dates";
 import { idColumns, type IdColumn } from "./ids";
-import { DELIMITER_NAMES, parseCsv, type Delimiter, type ParsedCsv } from "./parse";
+import { DELIMITER_NAMES, parseCsv, type Delimiter, type ParsedCsv, type Progress } from "./parse";
 
 export interface Report {
   delimiter: Delimiter;
@@ -41,15 +42,20 @@ export function prepareCsv(
   text: string,
   checks: Check[] = CHECKS,
   size = new TextEncoder().encode(text).byteLength,
+  onProgress?: Progress,
 ): PreparedCsv {
-  const csv = parseCsv(text);
+  const csv = parseCsv(text, onProgress);
   return { csv, findings: [...checks.flatMap((check) => check(csv)), ...batchLimit(csv, size)] };
 }
 
 // A file as opened: its bytes are checked for encoding, then decoded as file.text()
 // would, dropping a byte order mark and replacing bytes that are not UTF-8.
-export function prepareFile(bytes: Uint8Array, checks: Check[] = CHECKS): PreparedCsv {
-  const { csv, findings } = prepareCsv(new TextDecoder().decode(bytes), checks, bytes.byteLength);
+export function prepareFile(
+  bytes: Uint8Array,
+  { checks = CHECKS, onProgress }: { checks?: Check[]; onProgress?: Progress } = {},
+): PreparedCsv {
+  const text = new TextDecoder().decode(bytes);
+  const { csv, findings } = prepareCsv(text, checks, bytes.byteLength, onProgress);
   return { csv, findings: [...encodingChecks(bytes, csv), ...findings] };
 }
 
@@ -62,6 +68,7 @@ export function buildReport(
   { csv, findings }: PreparedCsv,
   key?: KeyColumn,
   dates: DateSettings = DEFAULT_DATE_SETTINGS,
+  examplesPerGroup = EXAMPLES_PER_GROUP,
 ): Report {
   const name = key && csv.header?.[key.column];
   const keyed = key && name !== undefined ? { ...key, name } : undefined;
@@ -73,11 +80,10 @@ export function buildReport(
     idColumns: idColumns(csv).map(named),
     dateColumns: dateColumns(csv).map(named),
     european: dates.european,
-    groups: groupFindings([
-      ...findings,
-      ...dateChecks(csv, dates),
-      ...(keyed ? duplicateKeys(csv, keyed) : []),
-    ]),
+    groups: groupFindings(
+      [...findings, ...dateChecks(csv, dates), ...(keyed ? duplicateKeys(csv, keyed) : [])],
+      examplesPerGroup,
+    ),
     ...(keyed ? { key: keyed } : {}),
   };
 }

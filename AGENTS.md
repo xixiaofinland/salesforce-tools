@@ -8,7 +8,8 @@ Every tool promises "your file never leaves this computer", and the code must ke
 
 - File handling lives only in sandbox pages, `src/pages/sandbox/<tool>.astro` on `SandboxLayout`, shown through `SandboxFrame` on the tool's host page. The host page carries text, ads and analytics and never touches a file.
 - Sandbox pages run only the site's own bundled code: add libraries as npm dependencies so they bundle into `/_astro/`, and keep scripts and styles in Astro `<script>`/`<style>` blocks or imported files. The CSP (`src/shared/sandbox/csp.ts`) blocks inline code, every network request and every third-party origin.
-- Results stay inside the sandbox: show them on the page or hand them to the user as a blob download. Sandbox code keeps `location` unchanged, links only to the same page, and sends nothing via `postMessage`, since CSP cannot stop those and ad scripts on the host page can listen.
+- Results stay inside the sandbox: show them on the page or hand them to the user as a blob download. Sandbox code keeps `location` unchanged, links only to the same page, and sends nothing via `window.postMessage`, since CSP cannot stop those and the host page and its ad scripts can listen.
+- Heavy work may run in a Web Worker the sandbox page starts from a `blob:` URL (Vite's `?worker&inline`), the only worker source the CSP allows; the worker inherits the page's CSP. Messages between the sandbox page and its own worker are fine: no other page can receive them.
 - A new tool adds its entry in `src/tools/registry.ts`, a host page, a sandbox page, and its sandbox to the e2e suite's network test.
 - User-facing copy says "open" a file, never "upload".
 

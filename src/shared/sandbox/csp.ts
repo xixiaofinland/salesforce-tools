@@ -2,9 +2,15 @@
 // may run only the site's own scripts and may open no network connection at all.
 //
 // CSP cannot stop the page navigating itself or a download link pointing off-site, so sandbox code
-// must never set `location`, link to another origin, or send file data with `postMessage` (ad
-// scripts on the hosting page can listen). Since only our own scripts run here, those are rules
-// for us, not gaps a third party can use.
+// must never set `location`, link to another origin, or send file data with `window.postMessage`
+// (ad scripts on the hosting page can listen). Since only our own scripts run here, those are
+// rules for us, not gaps a third party can use.
+//
+// Large files are checked in a Web Worker so the page stays responsive. The iframe's origin is
+// opaque, so a worker cannot load from the site's own URL; it starts from a blob: URL holding
+// our bundled code, and a worker from a local URL inherits this page's policy, connect-src
+// 'none' included. data: workers stay blocked. Messages between the page and its own worker
+// reach no other page.
 export const SANDBOX_PATH_PREFIX = "/sandbox/";
 
 const directives = [
@@ -16,7 +22,7 @@ const directives = [
   "font-src 'none'",
   "media-src 'none'",
   "object-src 'none'",
-  "worker-src 'none'",
+  "worker-src blob:",
   "child-src 'none'",
   "frame-src 'none'",
   "form-action 'none'",
