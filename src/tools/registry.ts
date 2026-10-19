@@ -11,7 +11,7 @@ export const tools: Tool[] = [
     slug: "csv-precheck",
     name: "Data Loader CSV Pre-check",
     description:
-      "Check a CSV before importing it with Data Loader: header row, column counts, duplicate columns, quotes. Runs in your browser; the file never leaves your computer.",
+      "Check a CSV before a Data Loader import: columns, quotes, encoding, IDs, dates, duplicates. Split big files. Your file never leaves your computer.",
     applicationCategory: "DeveloperApplication",
   },
 ];
